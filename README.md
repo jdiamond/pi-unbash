@@ -41,19 +41,41 @@ Security: Unauthorized Command Detected
 The agent wants to execute:
 git commit -m "update files" && npm run build
 
-Unapproved Base Commands found: git, npm
+Unapproved commands: git commit, npm run
 
 Allow this execution?
 → Yes
   No
 ```
 
+### Subcommand Control
+
+You can allow specific subcommands without allowing the entire base command. For example, you might want `git status` and `git log` to pass silently, but still be prompted for `git commit` or `git push`:
+
+```json
+{
+  "unbash": {
+    "alwaysAllowed": [
+      "ls", "pwd", "cd", "cat", "echo", "grep", "find",
+      "git status",
+      "git log",
+      "git diff"
+    ]
+  }
+}
+```
+
+Matching rules:
+- `"git"` in the allowlist → **all** git subcommands pass silently
+- `"git status"` in the allowlist → only `git status` passes; `git commit`, `git push`, etc. still require confirmation
+- If both `"git"` and `"git status"` are present, the broad `"git"` entry wins
+
 ## Configuration & Commands
 
 You can manage your security settings dynamically mid-session using the `/unbash` interactive command:
 
-* `/unbash allow <command>` - Permanently allow a base command (e.g., `/unbash allow git`)
-* `/unbash deny <command>` - Remove a command from the allowed list
+* `/unbash allow <command>` - Permanently allow a command (e.g., `/unbash allow git` or `/unbash allow git status`)
+* `/unbash deny <command>` - Remove a command from the allowed list (e.g., `/unbash deny git status`)
 * `/unbash toggle` - Turn the entire confirmation system on or off
 
 Your settings are persisted globally inside pi's central `~/.pi/agent/settings.json` file under the `"unbash"` key:

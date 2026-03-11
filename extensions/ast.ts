@@ -1,8 +1,14 @@
-export function extractAllCommandsFromAST(node: unknown): string[] {
+/** A command extracted from the AST with its name and first argument (if any). */
+export interface ExtractedCommand {
+  name: string;
+  firstArg?: string | undefined;
+}
+
+export function extractAllCommandsFromAST(node: unknown): ExtractedCommand[] {
   if (!node || typeof node !== "object") return [];
 
   const n = node as Record<string, unknown>;
-  const commands: string[] = [];
+  const commands: ExtractedCommand[] = [];
 
   const type = n["type"] as string | undefined;
 
@@ -10,7 +16,11 @@ export function extractAllCommandsFromAST(node: unknown): string[] {
     // Leaf: a concrete command
     case "Command": {
       const name = n["name"] as { text?: string } | undefined;
-      if (name?.text) commands.push(name.text);
+      if (name?.text) {
+        const suffix = n["suffix"] as Array<{ text?: string; value?: string }> | undefined;
+        const firstArg = suffix?.[0]?.value ?? suffix?.[0]?.text;
+        commands.push({ name: name.text, firstArg });
+      }
       walkArray(n["prefix"] as unknown[], commands);
       walkArray(n["suffix"] as unknown[], commands);
       break;
@@ -93,7 +103,7 @@ export function extractAllCommandsFromAST(node: unknown): string[] {
 }
 
 /** Recurse into each element of an array, if it exists. */
-function walkArray(arr: unknown[] | undefined, commands: string[]) {
+function walkArray(arr: unknown[] | undefined, commands: ExtractedCommand[]) {
   if (!Array.isArray(arr)) return;
   for (const item of arr) {
     commands.push(...extractAllCommandsFromAST(item));
@@ -105,8 +115,31 @@ function walkArray(arr: unknown[] | undefined, commands: string[]) {
  * unbash's WordImpl stores `parts` as a non-enumerable prototype getter,
  * so Object.values/Object.keys won't find it — we access it directly.
  */
-function walkWordParts(node: unknown, commands: string[]) {
+function walkWordParts(node: unknown, commands: ExtractedCommand[]) {
   if (!node || typeof node !== "object") return;
   const parts = (node as Record<string, unknown>)["parts"];
   walkArray(parts as unknown[], commands);
+}
+
+/**
+ * Check whether an extracted command is allowed by the allowlist.
+ *
+ * Matching rules:
+ * - "git" in allowlist → all git subcommands pass
+ * - "git status" in allowlist → only `git status` passes
+ * - If both "git" and "git status" exist, "git" wins (allows everything)
+ */
+export function isCommandAllowed(cmd: ExtractedCommand, allowlist: string[]): boolean {
+  // Check if the base command is broadly allowed
+  if (allowlist.includes(cmd.name)) return true;
+
+  // Check for subcommand match: "git status"
+  if (cmd.firstArg && allowlist.includes(`${cmd.name} ${cmd.firstArg}`)) return true;
+
+  return false;
+}
+
+/** Format an extracted command for display. */
+export function formatCommand(cmd: ExtractedCommand): string {
+  return cmd.firstArg ? `${cmd.name} ${cmd.firstArg}` : cmd.name;
 }

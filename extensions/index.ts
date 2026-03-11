@@ -4,7 +4,7 @@ import { parse as parseBash } from "unbash";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
-import { extractAllCommandsFromAST } from "./ast.ts";
+import { extractAllCommandsFromAST, isCommandAllowed, formatCommand } from "./ast.ts";
 
 // 1. Define configuration storage using pi's native settings.json
 const AGENT_DIR = path.join(os.homedir(), ".pi", "agent");
@@ -108,7 +108,7 @@ export default function (pi: ExtensionAPI) {
     if (allCommands.length === 0) return;
 
     // Find all commands that are NOT in the allow list
-    const unauthorizedCommands = allCommands.filter((cmd: string) => !config.alwaysAllowed.includes(cmd));
+    const unauthorizedCommands = allCommands.filter(cmd => !isCommandAllowed(cmd, config.alwaysAllowed));
 
     // If every single extracted command is in the allow-list, let it pass silently!
     if (unauthorizedCommands.length === 0) {
@@ -118,16 +118,16 @@ export default function (pi: ExtensionAPI) {
     if (!ctx.hasUI) {
       return { 
         block: true, 
-        reason: `Commands [${unauthorizedCommands.join(", ")}] require UI confirmation.` 
+        reason: `Commands [${unauthorizedCommands.map(formatCommand).join(", ")}] require UI confirmation.` 
       };
     }
 
     // Deduplicate for display
-    const uniqueUnauthorized = Array.from(new Set(unauthorizedCommands));
+    const uniqueUnauthorized = Array.from(new Set(unauthorizedCommands.map(formatCommand)));
 
     const confirmed = await ctx.ui.confirm(
       "Security: Unauthorized Command Detected",
-      `The agent wants to execute:\n\n${rawCmd}\n\nUnapproved Base Commands found: ${uniqueUnauthorized.join(", ")}\n\nAllow this execution?`
+      `The agent wants to execute:\n\n${rawCmd}\n\nUnapproved commands: ${uniqueUnauthorized.join(", ")}\n\nAllow this execution?`
     );
 
     if (!confirmed) {
