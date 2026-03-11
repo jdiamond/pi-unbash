@@ -56,14 +56,14 @@ export default function (pi: ExtensionAPI) {
         if (!config.alwaysAllowed.includes(target)) {
           config.alwaysAllowed.push(target);
           saveConfig(config);
-          ctx.ui.notify(`'${target}' added to allowed commands.`, "success");
+          ctx.ui.notify(`'${target}' added to allowed commands.`, "info");
         } else {
           ctx.ui.notify(`'${target}' is already allowed.`, "info");
         }
       } else if (action === "deny" && target) {
         config.alwaysAllowed = config.alwaysAllowed.filter(c => c !== target);
         saveConfig(config);
-        ctx.ui.notify(`'${target}' removed from allowed commands.`, "success");
+        ctx.ui.notify(`'${target}' removed from allowed commands.`, "info");
       } else if (action === "toggle") {
         config.enabled = !config.enabled;
         saveConfig(config);
@@ -95,7 +95,7 @@ export default function (pi: ExtensionAPI) {
     if (allCommands.length === 0) return;
 
     // Find all commands that are NOT in the allow list
-    const unauthorizedCommands = allCommands.filter(cmd => !config.alwaysAllowed.includes(cmd));
+    const unauthorizedCommands = allCommands.filter((cmd: string) => !config.alwaysAllowed.includes(cmd));
 
     // If every single extracted command is in the allow-list, let it pass silently!
     if (unauthorizedCommands.length === 0) {
