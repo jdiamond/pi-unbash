@@ -13,6 +13,9 @@
   "author": "",
   "license": "MIT",
   "type": "module",
+  "scripts": {
+    "test": "node --test --experimental-strip-types test/**/*.ts"
+  },
   "pi": {
     "extensions": [
       "./extensions/index.ts"
