@@ -59,16 +59,22 @@ You can allow specific subcommands without allowing the entire base command. For
       "ls", "pwd", "cd", "cat", "echo", "grep", "find",
       "git status",
       "git log",
-      "git diff"
+      "git diff",
+      "jira issue view",
+      "git branch --show-current"
     ]
   }
 }
 ```
 
-Matching rules:
-- `"git"` in the allowlist → **all** git subcommands pass silently
-- `"git status"` in the allowlist → only `git status` passes; `git commit`, `git push`, etc. still require confirmation
-- If both `"git"` and `"git status"` are present, the broad `"git"` entry wins
+Matching uses **subsequence logic** — the tokens in your allowlist entry must appear in order in the actual command, but extra flags and trailing arguments are permitted:
+
+| Allowlist Entry | Matches | Doesn't Match |
+|----------------|---------|---------------|
+| `git` | all git commands | — |
+| `git status` | `git status`, `git status --short` | `git commit -m "msg"` |
+| `git branch --show-current` | `git branch --show-current`, `git branch -v --show-current` | `git branch -D main` |
+| `jira issue view` | `jira issue view PROJ-123`, `jira issue view --verbose PROJ-123` | `jira issue create` |
 
 ## Configuration & Commands
 

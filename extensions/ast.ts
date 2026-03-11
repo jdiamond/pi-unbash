@@ -1,7 +1,7 @@
-/** A command extracted from the AST with its name and first argument (if any). */
+/** A command extracted from the AST with its name and arguments. */
 export interface ExtractedCommand {
   name: string;
-  firstArg?: string | undefined;
+  args: string[];
 }
 
 export function extractAllCommandsFromAST(node: unknown): ExtractedCommand[] {
@@ -18,8 +18,8 @@ export function extractAllCommandsFromAST(node: unknown): ExtractedCommand[] {
       const name = n["name"] as { text?: string } | undefined;
       if (name?.text) {
         const suffix = n["suffix"] as Array<{ text?: string; value?: string }> | undefined;
-        const firstArg = suffix?.[0]?.value ?? suffix?.[0]?.text;
-        commands.push({ name: name.text, firstArg });
+        const args = suffix?.map(s => s.value ?? s.text ?? "") ?? [];
+        commands.push({ name: name.text, args });
       }
       walkArray(n["prefix"] as unknown[], commands);
       walkArray(n["suffix"] as unknown[], commands);
@@ -124,22 +124,44 @@ function walkWordParts(node: unknown, commands: ExtractedCommand[]) {
 /**
  * Check whether an extracted command is allowed by the allowlist.
  *
- * Matching rules:
- * - "git" in allowlist → all git subcommands pass
- * - "git status" in allowlist → only `git status` passes
- * - If both "git" and "git status" exist, "git" wins (allows everything)
+ * Matching uses subsequence logic:
+ * - "git" → allows all git commands (base command match)
+ * - "git status" → allows `git status`, `git status --short`, etc.
+ * - "git branch --show-current" → allows `git branch --show-current`,
+ *   `git branch -v --show-current`, etc.
+ * - "jira issue view" → allows `jira issue view XXX-123`, etc.
+ *
+ * The allowlist tokens must appear in order in the actual args,
+ * but extra flags or trailing positional args are permitted.
  */
 export function isCommandAllowed(cmd: ExtractedCommand, allowlist: string[]): boolean {
-  // Check if the base command is broadly allowed
-  if (allowlist.includes(cmd.name)) return true;
+  for (const entry of allowlist) {
+    const tokens = entry.split(" ");
+    const entryName = tokens[0]!;
+    const entryArgs = tokens.slice(1);
 
-  // Check for subcommand match: "git status"
-  if (cmd.firstArg && allowlist.includes(`${cmd.name} ${cmd.firstArg}`)) return true;
+    if (entryName !== cmd.name) continue;
+
+    // Base command match with no arg requirements: allow everything
+    if (entryArgs.length === 0) return true;
+
+    // Subsequence match: entryArgs tokens must appear in order in cmd.args
+    if (isSubsequence(entryArgs, cmd.args)) return true;
+  }
 
   return false;
 }
 
-/** Format an extracted command for display. */
+/** Check if `needle` tokens appear in order within `haystack`. */
+function isSubsequence(needle: string[], haystack: string[]): boolean {
+  let ni = 0;
+  for (let hi = 0; hi < haystack.length && ni < needle.length; hi++) {
+    if (haystack[hi] === needle[ni]) ni++;
+  }
+  return ni === needle.length;
+}
+
+/** Format an extracted command for display (name + first arg). */
 export function formatCommand(cmd: ExtractedCommand): string {
-  return cmd.firstArg ? `${cmd.name} ${cmd.firstArg}` : cmd.name;
+  return cmd.args.length > 0 ? `${cmd.name} ${cmd.args[0]}` : cmd.name;
 }

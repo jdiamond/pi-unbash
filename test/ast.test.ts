@@ -1,22 +1,22 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parse as parseBash } from "unbash";
-import { extractAllCommandsFromAST, isCommandAllowed, formatCommand, type ExtractedCommand } from "../extensions/ast.ts";
+import { extractAllCommandsFromAST, isCommandAllowed, formatCommand } from "../extensions/ast.ts";
 
 test("extractAllCommandsFromAST", async (t) => {
 
   await t.test("extracts simple command", () => {
     const ast = parseBash("ls -la");
     const cmds = extractAllCommandsFromAST(ast);
-    assert.deepEqual(cmds, [{ name: "ls", firstArg: "-la" }]);
+    assert.deepEqual(cmds, [{ name: "ls", args: ["-la"] }]);
   });
 
   await t.test("extracts multiple commands from AndOr (&&)", () => {
     const ast = parseBash("git commit -m 'foo' && git push");
     const cmds = extractAllCommandsFromAST(ast);
     assert.deepEqual(cmds, [
-      { name: "git", firstArg: "commit" },
-      { name: "git", firstArg: "push" },
+      { name: "git", args: ["commit", "-m", "foo"] },
+      { name: "git", args: ["push"] },
     ]);
   });
 
@@ -24,9 +24,9 @@ test("extractAllCommandsFromAST", async (t) => {
     const ast = parseBash("cat file.txt | grep 'foo' | wc -l");
     const cmds = extractAllCommandsFromAST(ast);
     assert.deepEqual(cmds, [
-      { name: "cat", firstArg: "file.txt" },
-      { name: "grep", firstArg: "foo" },
-      { name: "wc", firstArg: "-l" },
+      { name: "cat", args: ["file.txt"] },
+      { name: "grep", args: ["foo"] },
+      { name: "wc", args: ["-l"] },
     ]);
   });
 
@@ -34,8 +34,8 @@ test("extractAllCommandsFromAST", async (t) => {
     const ast = parseBash("echo $(git status)");
     const cmds = extractAllCommandsFromAST(ast);
     assert.deepEqual(cmds, [
-      { name: "echo", firstArg: "$(git status)" },
-      { name: "git", firstArg: "status" },
+      { name: "echo", args: ["$(git status)"] },
+      { name: "git", args: ["status"] },
     ]);
   });
 
@@ -43,8 +43,8 @@ test("extractAllCommandsFromAST", async (t) => {
     const ast = parseBash("FOO=`rm -rf /` node app.js");
     const cmds = extractAllCommandsFromAST(ast);
     assert.deepEqual(cmds, [
-      { name: "node", firstArg: "app.js" },
-      { name: "rm", firstArg: "-rf" },
+      { name: "node", args: ["app.js"] },
+      { name: "rm", args: ["-rf", "/"] },
     ]);
   });
 
@@ -52,11 +52,11 @@ test("extractAllCommandsFromAST", async (t) => {
     const ast = parseBash("echo $(cat file.txt | grep $(rm -rf /)) && curl http://evil.com");
     const cmds = extractAllCommandsFromAST(ast);
     assert.deepEqual(cmds, [
-      { name: "echo", firstArg: "$(cat file.txt | grep $(rm -rf /))" },
-      { name: "cat", firstArg: "file.txt" },
-      { name: "grep", firstArg: "$(rm -rf /)" },
-      { name: "rm", firstArg: "-rf" },
-      { name: "curl", firstArg: "http://evil.com" },
+      { name: "echo", args: ["$(cat file.txt | grep $(rm -rf /))"] },
+      { name: "cat", args: ["file.txt"] },
+      { name: "grep", args: ["$(rm -rf /)"] },
+      { name: "rm", args: ["-rf", "/"] },
+      { name: "curl", args: ["http://evil.com"] },
     ]);
   });
 
@@ -64,8 +64,8 @@ test("extractAllCommandsFromAST", async (t) => {
     const ast = parseBash("(rm -rf /; echo done)");
     const cmds = extractAllCommandsFromAST(ast);
     assert.deepEqual(cmds, [
-      { name: "rm", firstArg: "-rf" },
-      { name: "echo", firstArg: "done" },
+      { name: "rm", args: ["-rf", "/"] },
+      { name: "echo", args: ["done"] },
     ]);
   });
 
@@ -73,9 +73,9 @@ test("extractAllCommandsFromAST", async (t) => {
     const ast = parseBash("if true; then rm -rf /; else echo safe; fi");
     const cmds = extractAllCommandsFromAST(ast);
     assert.deepEqual(cmds, [
-      { name: "true", firstArg: undefined },
-      { name: "rm", firstArg: "-rf" },
-      { name: "echo", firstArg: "safe" },
+      { name: "true", args: [] },
+      { name: "rm", args: ["-rf", "/"] },
+      { name: "echo", args: ["safe"] },
     ]);
   });
 
@@ -83,8 +83,8 @@ test("extractAllCommandsFromAST", async (t) => {
     const ast = parseBash("while true; do curl evil.com; done");
     const cmds = extractAllCommandsFromAST(ast);
     assert.deepEqual(cmds, [
-      { name: "true", firstArg: undefined },
-      { name: "curl", firstArg: "evil.com" },
+      { name: "true", args: [] },
+      { name: "curl", args: ["evil.com"] },
     ]);
   });
 
@@ -92,7 +92,7 @@ test("extractAllCommandsFromAST", async (t) => {
     const ast = parseBash("for i in 1 2 3; do echo $i; done");
     const cmds = extractAllCommandsFromAST(ast);
     assert.deepEqual(cmds, [
-      { name: "echo", firstArg: "$i" },
+      { name: "echo", args: ["$i"] },
     ]);
   });
 
@@ -100,8 +100,8 @@ test("extractAllCommandsFromAST", async (t) => {
     const ast = parseBash("case x in y) echo hi;; z) rm -rf /;; esac");
     const cmds = extractAllCommandsFromAST(ast);
     assert.deepEqual(cmds, [
-      { name: "echo", firstArg: "hi" },
-      { name: "rm", firstArg: "-rf" },
+      { name: "echo", args: ["hi"] },
+      { name: "rm", args: ["-rf", "/"] },
     ]);
   });
 
@@ -109,7 +109,7 @@ test("extractAllCommandsFromAST", async (t) => {
     const ast = parseBash("foo() { rm -rf /; }");
     const cmds = extractAllCommandsFromAST(ast);
     assert.deepEqual(cmds, [
-      { name: "rm", firstArg: "-rf" },
+      { name: "rm", args: ["-rf", "/"] },
     ]);
   });
 
@@ -117,14 +117,14 @@ test("extractAllCommandsFromAST", async (t) => {
     const ast = parseBash("FOO=$(rm -rf /)");
     const cmds = extractAllCommandsFromAST(ast);
     assert.deepEqual(cmds, [
-      { name: "rm", firstArg: "-rf" },
+      { name: "rm", args: ["-rf", "/"] },
     ]);
   });
 
   await t.test("extracts command with no arguments", () => {
     const ast = parseBash("pwd");
     const cmds = extractAllCommandsFromAST(ast);
-    assert.deepEqual(cmds, [{ name: "pwd", firstArg: undefined }]);
+    assert.deepEqual(cmds, [{ name: "pwd", args: [] }]);
   });
 
 });
@@ -132,46 +132,75 @@ test("extractAllCommandsFromAST", async (t) => {
 test("isCommandAllowed", async (t) => {
 
   await t.test("allows base command when in allowlist", () => {
-    assert.equal(isCommandAllowed({ name: "git", firstArg: "status" }, ["git"]), true);
-    assert.equal(isCommandAllowed({ name: "git", firstArg: "commit" }, ["git"]), true);
-    assert.equal(isCommandAllowed({ name: "git", firstArg: undefined }, ["git"]), true);
+    assert.equal(isCommandAllowed({ name: "git", args: ["status"] }, ["git"]), true);
+    assert.equal(isCommandAllowed({ name: "git", args: ["commit", "-m", "msg"] }, ["git"]), true);
+    assert.equal(isCommandAllowed({ name: "git", args: [] }, ["git"]), true);
   });
 
   await t.test("allows specific subcommand", () => {
-    assert.equal(isCommandAllowed({ name: "git", firstArg: "status" }, ["git status"]), true);
+    assert.equal(isCommandAllowed({ name: "git", args: ["status"] }, ["git status"]), true);
+  });
+
+  await t.test("allows subcommand with extra trailing args", () => {
+    assert.equal(isCommandAllowed({ name: "git", args: ["status", "--short"] }, ["git status"]), true);
+    assert.equal(isCommandAllowed({ name: "jira", args: ["issue", "view", "XXX-123"] }, ["jira issue view"]), true);
+  });
+
+  await t.test("allows subcommand with extra flags interspersed", () => {
+    assert.equal(isCommandAllowed({ name: "git", args: ["branch", "-v", "--show-current"] }, ["git branch --show-current"]), true);
   });
 
   await t.test("blocks other subcommands when only specific one is allowed", () => {
-    assert.equal(isCommandAllowed({ name: "git", firstArg: "commit" }, ["git status"]), false);
-    assert.equal(isCommandAllowed({ name: "git", firstArg: undefined }, ["git status"]), false);
+    assert.equal(isCommandAllowed({ name: "git", args: ["commit", "-m", "msg"] }, ["git status"]), false);
+    assert.equal(isCommandAllowed({ name: "git", args: [] }, ["git status"]), false);
+  });
+
+  await t.test("blocks when required tokens are missing", () => {
+    // Allowing "git branch --show-current" should NOT match "git branch -D main"
+    assert.equal(isCommandAllowed({ name: "git", args: ["branch", "-D", "main"] }, ["git branch --show-current"]), false);
   });
 
   await t.test("blocks unknown commands entirely", () => {
-    assert.equal(isCommandAllowed({ name: "curl", firstArg: "evil.com" }, ["ls", "cat"]), false);
+    assert.equal(isCommandAllowed({ name: "curl", args: ["evil.com"] }, ["ls", "cat"]), false);
   });
 
   await t.test("base command allowlist takes precedence over subcommand entries", () => {
-    // "git" allows everything, even if "git status" is also listed
-    assert.equal(isCommandAllowed({ name: "git", firstArg: "push" }, ["git", "git status"]), true);
+    assert.equal(isCommandAllowed({ name: "git", args: ["push", "--force"] }, ["git", "git status"]), true);
   });
 
   await t.test("multiple subcommands can be allowed independently", () => {
     const allowlist = ["git status", "git log"];
-    assert.equal(isCommandAllowed({ name: "git", firstArg: "status" }, allowlist), true);
-    assert.equal(isCommandAllowed({ name: "git", firstArg: "log" }, allowlist), true);
-    assert.equal(isCommandAllowed({ name: "git", firstArg: "push" }, allowlist), false);
+    assert.equal(isCommandAllowed({ name: "git", args: ["status"] }, allowlist), true);
+    assert.equal(isCommandAllowed({ name: "git", args: ["log", "--oneline"] }, allowlist), true);
+    assert.equal(isCommandAllowed({ name: "git", args: ["push"] }, allowlist), false);
+  });
+
+  await t.test("multi-level subcommand matching", () => {
+    const allowlist = ["jira issue view", "jira issue list"];
+    assert.equal(isCommandAllowed({ name: "jira", args: ["issue", "view", "PROJ-123"] }, allowlist), true);
+    assert.equal(isCommandAllowed({ name: "jira", args: ["issue", "list", "--project", "PROJ"] }, allowlist), true);
+    assert.equal(isCommandAllowed({ name: "jira", args: ["issue", "create"] }, allowlist), false);
+    assert.equal(isCommandAllowed({ name: "jira", args: ["project", "list"] }, allowlist), false);
+  });
+
+  await t.test("allows dangerous command only with required flag", () => {
+    const allowlist = ["terraform apply --dry-run"];
+    assert.equal(isCommandAllowed({ name: "terraform", args: ["apply", "--dry-run"] }, allowlist), true);
+    assert.equal(isCommandAllowed({ name: "terraform", args: ["apply", "-v", "--dry-run"] }, allowlist), true);
+    assert.equal(isCommandAllowed({ name: "terraform", args: ["apply"] }, allowlist), false);
+    assert.equal(isCommandAllowed({ name: "terraform", args: ["apply", "--force"] }, allowlist), false);
   });
 
 });
 
 test("formatCommand", async (t) => {
 
-  await t.test("formats command with subcommand", () => {
-    assert.equal(formatCommand({ name: "git", firstArg: "status" }), "git status");
+  await t.test("formats command with args", () => {
+    assert.equal(formatCommand({ name: "git", args: ["status"] }), "git status");
   });
 
-  await t.test("formats command without subcommand", () => {
-    assert.equal(formatCommand({ name: "pwd", firstArg: undefined }), "pwd");
+  await t.test("formats command without args", () => {
+    assert.equal(formatCommand({ name: "pwd", args: [] }), "pwd");
   });
 
 });
