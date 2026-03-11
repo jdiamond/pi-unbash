@@ -1,0 +1,27 @@
+{
+  "name": "pi-unbash",
+  "version": "1.0.0",
+  "description": "A highly secure bash confirmation extension for pi, using the unbash AST parser to perfectly intercept subshells and logic gates.",
+  "keywords": [
+    "pi-package",
+    "bash",
+    "security",
+    "ast",
+    "unbash",
+    "confirm"
+  ],
+  "author": "",
+  "license": "MIT",
+  "type": "module",
+  "pi": {
+    "extensions": [
+      "./extensions/index.ts"
+    ]
+  },
+  "dependencies": {
+    "unbash": "^2.2.0"
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "*"
+  }
+}
