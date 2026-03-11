@@ -10,8 +10,16 @@
     "unbash",
     "confirm"
   ],
-  "author": "",
+  "author": "Jason Diamond <jason@diamond.name>",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jdiamond/pi-unbash.git"
+  },
+  "homepage": "https://github.com/jdiamond/pi-unbash#readme",
+  "bugs": {
+    "url": "https://github.com/jdiamond/pi-unbash/issues"
+  },
   "files": [
     "extensions",
     "README.md"
