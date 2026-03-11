@@ -127,6 +127,23 @@ test("extractAllCommandsFromAST", async (t) => {
     assert.deepEqual(cmds, [{ name: "pwd", args: [] }]);
   });
 
+  await t.test("extracts commands from double-quoted subshells", () => {
+    const ast = parseBash('echo "hello $(rm -rf /)"');
+    const cmds = extractAllCommandsFromAST(ast);
+    assert.deepEqual(cmds, [
+      { name: "echo", args: ["hello $(rm -rf /)"] },
+      { name: "rm", args: ["-rf", "/"] },
+    ]);
+  });
+
+  await t.test("does not extract from single-quoted strings", () => {
+    const ast = parseBash("echo 'hello $(rm -rf /)'");
+    const cmds = extractAllCommandsFromAST(ast);
+    assert.deepEqual(cmds, [
+      { name: "echo", args: ["hello $(rm -rf /)"] },
+    ]);
+  });
+
 });
 
 test("isCommandAllowed", async (t) => {

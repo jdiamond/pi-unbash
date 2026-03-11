@@ -93,9 +93,10 @@ export function extractAllCommandsFromAST(node: unknown): ExtractedCommand[] {
       // a `parts` getter with CommandExpansions inside.
       // This getter is non-enumerable (unbash WordImpl prototype),
       // so we must access it explicitly.
-      if (type === undefined) {
-        walkWordParts(n, commands);
-      }
+      //
+      // Wrapper nodes like DoubleQuoted also have a `parts` array
+      // that may contain CommandExpansions. We handle both cases here.
+      walkWordParts(n, commands);
       break;
   }
 
