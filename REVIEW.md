@@ -82,3 +82,43 @@ The `tool_call` handler returns `undefined` (falls through) when `allCommands.le
 ## Summary
 
 The architecture is right and the pi integration is clean. The main concern was **completeness of the AST traversal** — resolved in v1.1.0 with explicit node type handling and direct `parts` getter access to work around unbash's non-enumerable prototype properties.
+
+---
+
+## Additional Review Notes (March 10, 2026)
+
+### Quick verdict
+
+**7.5/10**
+
+AST-based interception is the right approach for this threat model, and test coverage is strong.
+
+### What’s strong
+
+- Security model is sound: AST parsing with `unbash` is substantially safer than regex filtering.
+- AST traversal now covers major control-flow and grouping constructs (`If`, `While`, `Case`, `Subshell`, `Assignment`, etc.).
+- Test suite in `test/ast.test.ts` exercises realistic nested and adversarial command patterns.
+- TypeScript strict mode is enabled and `npm test` passes.
+
+### Priority issues
+
+1. **High — `/unbash allow` cannot currently store multi-token entries**
+   - File: `extensions/index.ts`
+   - Current argument parsing uses `args.trim().split(" ")` and only reads `parts[1]`, so `/unbash allow git status` is treated as `git`.
+   - This conflicts with README guidance and prevents intended subcommand granularity.
+
+2. **Medium — No runtime validation of loaded config shape**
+   - File: `extensions/index.ts` (`loadConfig`)
+   - `parsed.unbash` is merged directly into defaults without checking types (`enabled` boolean, `alwaysAllowed` string[]).
+
+3. **Medium — Shared settings writes are non-atomic**
+   - File: `extensions/index.ts` (`saveConfig`)
+   - Read-modify-write on `~/.pi/agent/settings.json` can race with other writers and lose updates.
+
+4. **Low/Medium — Parse errors are hard-blocked with no UI override**
+   - File: `extensions/index.ts` (`tool_call`)
+   - Security-first default is reasonable, but in UI mode a confirmation fallback would improve usability.
+
+5. **Low — Command UX gap**
+   - README suggests dynamic command control with multi-token entries; implementation does not yet fully match this behavior.
+   - A `/unbash list` command would improve discoverability/debugging.
