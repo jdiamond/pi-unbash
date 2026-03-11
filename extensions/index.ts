@@ -6,9 +6,9 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { extractAllCommandsFromAST } from "./ast.ts";
 
-// 1. Define configuration storage
-const CONFIG_DIR = path.join(os.homedir(), ".pi", "agent", "extensions");
-const CONFIG_PATH = path.join(CONFIG_DIR, "pi-unbash.json");
+// 1. Define configuration storage using pi's native settings.json
+const AGENT_DIR = path.join(os.homedir(), ".pi", "agent");
+const SETTINGS_PATH = path.join(AGENT_DIR, "settings.json");
 
 interface UnbashConfig {
   enabled: boolean;
@@ -21,12 +21,16 @@ const DEFAULT_CONFIG: UnbashConfig = {
 };
 
 function loadConfig(): UnbashConfig {
-  if (fs.existsSync(CONFIG_PATH)) {
+  if (fs.existsSync(SETTINGS_PATH)) {
     try {
-      const data = fs.readFileSync(CONFIG_PATH, "utf-8");
-      return { ...DEFAULT_CONFIG, ...JSON.parse(data) };
+      const data = fs.readFileSync(SETTINGS_PATH, "utf-8");
+      const parsed = JSON.parse(data);
+      // Fallback to default if the "unbash" key doesn't exist yet
+      if (parsed.unbash) {
+        return { ...DEFAULT_CONFIG, ...parsed.unbash };
+      }
     } catch (e) {
-      console.error("Failed to parse config, using defaults", e);
+      console.error("Failed to parse settings.json, using unbash defaults", e);
     }
   }
   return DEFAULT_CONFIG;
@@ -34,10 +38,19 @@ function loadConfig(): UnbashConfig {
 
 function saveConfig(config: UnbashConfig) {
   try {
-    fs.mkdirSync(CONFIG_DIR, { recursive: true });
-    fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), "utf-8");
+    fs.mkdirSync(AGENT_DIR, { recursive: true });
+    
+    let settings: any = {};
+    if (fs.existsSync(SETTINGS_PATH)) {
+      settings = JSON.parse(fs.readFileSync(SETTINGS_PATH, "utf-8"));
+    }
+    
+    // Mutate only our namespace
+    settings.unbash = config;
+    
+    fs.writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2), "utf-8");
   } catch (e) {
-    console.error("Failed to save config", e);
+    console.error("Failed to save unbash config to settings.json", e);
   }
 }
 
