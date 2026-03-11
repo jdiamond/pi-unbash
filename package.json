@@ -12,6 +12,10 @@
   ],
   "author": "",
   "license": "MIT",
+  "files": [
+    "extensions",
+    "README.md"
+  ],
   "type": "module",
   "scripts": {
     "test": "npm run check && node --test --experimental-strip-types test/**/*.ts",
