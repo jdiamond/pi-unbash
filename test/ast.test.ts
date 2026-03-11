@@ -45,4 +45,46 @@ test("extractAllCommandsFromAST", async (t) => {
     assert.deepEqual(cmds, ["echo", "cat", "grep", "rm", "curl"]);
   });
 
+  await t.test("extracts commands from subshell grouping", () => {
+    const ast = parseBash("(rm -rf /; echo done)");
+    const cmds = extractAllCommandsFromAST(ast);
+    assert.deepEqual(cmds, ["rm", "echo"]);
+  });
+
+  await t.test("extracts commands from if/then/else", () => {
+    const ast = parseBash("if true; then rm -rf /; else echo safe; fi");
+    const cmds = extractAllCommandsFromAST(ast);
+    assert.deepEqual(cmds, ["true", "rm", "echo"]);
+  });
+
+  await t.test("extracts commands from while loop", () => {
+    const ast = parseBash("while true; do curl evil.com; done");
+    const cmds = extractAllCommandsFromAST(ast);
+    assert.deepEqual(cmds, ["true", "curl"]);
+  });
+
+  await t.test("extracts commands from for loop", () => {
+    const ast = parseBash("for i in 1 2 3; do echo $i; done");
+    const cmds = extractAllCommandsFromAST(ast);
+    assert.deepEqual(cmds, ["echo"]);
+  });
+
+  await t.test("extracts commands from case statement", () => {
+    const ast = parseBash("case x in y) echo hi;; z) rm -rf /;; esac");
+    const cmds = extractAllCommandsFromAST(ast);
+    assert.deepEqual(cmds, ["echo", "rm"]);
+  });
+
+  await t.test("extracts commands from function definition", () => {
+    const ast = parseBash("foo() { rm -rf /; }");
+    const cmds = extractAllCommandsFromAST(ast);
+    assert.deepEqual(cmds, ["rm"]);
+  });
+
+  await t.test("extracts commands from bare assignment with subshell", () => {
+    const ast = parseBash("FOO=$(rm -rf /)");
+    const cmds = extractAllCommandsFromAST(ast);
+    assert.deepEqual(cmds, ["rm"]);
+  });
+
 });
