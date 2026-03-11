@@ -31,7 +31,7 @@ pi -e ./path/to/pi-unbash
 ## Usage
 
 By default, `pi-unbash` allows harmless read-only commands to execute silently:
-`ls`, `pwd`, `cat`, `echo`, `grep`, `find`.
+`ls`, `pwd`, `cd`, `cat`, `echo`, `grep`, `find`.
 
 If the AI attempts to run anything else (e.g., `git`, `npm`, `rm`, `node`), the execution is paused, and a confirmation dialog appears in your `pi` session:
 
@@ -68,6 +68,7 @@ Your settings are persisted globally inside pi's central `~/.pi/agent/settings.j
     "alwaysAllowed": [
       "ls",
       "pwd",
+      "cd",
       "cat",
       "echo",
       "grep",

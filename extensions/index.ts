@@ -17,7 +17,7 @@ interface UnbashConfig {
 
 const DEFAULT_CONFIG: UnbashConfig = {
   enabled: true,
-  alwaysAllowed: ["ls", "pwd", "cat", "echo", "grep", "find"],
+  alwaysAllowed: ["ls", "pwd", "cd", "cat", "echo", "grep", "find"],
 };
 
 function loadConfig(): UnbashConfig {
