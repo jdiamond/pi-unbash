@@ -15,25 +15,82 @@ interface UnbashConfig {
   alwaysAllowed: string[];
 }
 
+interface LoadedConfigResult {
+  config: UnbashConfig;
+  warning?: string;
+}
+
 const DEFAULT_CONFIG: UnbashConfig = {
   enabled: true,
   alwaysAllowed: ["ls", "pwd", "cd", "cat", "echo", "grep", "find"],
 };
 
-function loadConfig(): UnbashConfig {
+const SAFE_FALLBACK_CONFIG: UnbashConfig = {
+  enabled: true,
+  alwaysAllowed: [],
+};
+
+export function validateLoadedUnbashConfig(input: unknown): LoadedConfigResult {
+  if (!input || typeof input !== "object") {
+    return {
+      config: { ...SAFE_FALLBACK_CONFIG },
+      warning: "Invalid unbash config shape; using safe fallback (enabled=true, alwaysAllowed=[]).",
+    };
+  }
+
+  const cfg = input as Record<string, unknown>;
+  const warnings: string[] = [];
+
+  let enabled = SAFE_FALLBACK_CONFIG.enabled;
+  if (typeof cfg.enabled === "boolean") {
+    enabled = cfg.enabled;
+  } else if (cfg.enabled !== undefined) {
+    warnings.push("enabled must be a boolean");
+  }
+
+  let alwaysAllowed = [...SAFE_FALLBACK_CONFIG.alwaysAllowed];
+  if (Array.isArray(cfg.alwaysAllowed)) {
+    const validEntries = cfg.alwaysAllowed
+      .filter((entry): entry is string => typeof entry === "string")
+      .map(entry => entry.trim())
+      .filter(entry => entry.length > 0);
+
+    if (validEntries.length !== cfg.alwaysAllowed.length) {
+      warnings.push("alwaysAllowed must contain only non-empty strings");
+    }
+
+    alwaysAllowed = validEntries;
+  } else if (cfg.alwaysAllowed !== undefined) {
+    warnings.push("alwaysAllowed must be a string[]");
+  }
+
+  if (warnings.length > 0) {
+    return {
+      config: { enabled, alwaysAllowed },
+      warning: `Invalid unbash config fields (${warnings.join("; ")}); using safe values for invalid fields.`,
+    };
+  }
+
+  return { config: { enabled, alwaysAllowed } };
+}
+
+function loadConfig(): LoadedConfigResult {
   if (fs.existsSync(SETTINGS_PATH)) {
     try {
       const data = fs.readFileSync(SETTINGS_PATH, "utf-8");
       const parsed = JSON.parse(data);
-      // Fallback to default if the "unbash" key doesn't exist yet
+      // Fallback to defaults if the "unbash" key doesn't exist yet
       if (parsed.unbash) {
-        return { ...DEFAULT_CONFIG, ...parsed.unbash };
+        return validateLoadedUnbashConfig(parsed.unbash);
       }
     } catch (e) {
-      console.error("Failed to parse settings.json, using unbash defaults", e);
+      return {
+        config: { ...SAFE_FALLBACK_CONFIG },
+        warning: "Failed to parse settings.json; using safe fallback (enabled=true, alwaysAllowed=[]).",
+      };
     }
   }
-  return DEFAULT_CONFIG;
+  return { config: DEFAULT_CONFIG };
 }
 
 function saveConfig(config: UnbashConfig) {
@@ -65,12 +122,23 @@ export function parseUnbashArgs(args: string): { action: string; target: string 
 }
 
 export default function (pi: ExtensionAPI) {
-  let config = loadConfig();
+  const loaded = loadConfig();
+  let config = loaded.config;
+  let configWarning = loaded.warning;
+
+  if (configWarning) {
+    console.warn(`[pi-unbash] ${configWarning}`);
+  }
 
   // Settings Management Command
   pi.registerCommand("unbash", {
     description: "Manage pi-unbash security settings",
     handler: async (args, ctx) => {
+      if (configWarning && ctx.hasUI) {
+        ctx.ui.notify(`[pi-unbash] ${configWarning}`, "warning");
+        configWarning = undefined;
+      }
+
       const { action, target } = parseUnbashArgs(args);
 
       if (action === "allow" && target) {
@@ -97,6 +165,11 @@ export default function (pi: ExtensionAPI) {
 
   // The core interception hook
   pi.on("tool_call", async (event, ctx) => {
+    if (configWarning && ctx.hasUI) {
+      ctx.ui.notify(`[pi-unbash] ${configWarning}`, "warning");
+      configWarning = undefined;
+    }
+
     if (!config.enabled) return;
     if (!isToolCallEventType("bash", event)) return;
 

@@ -63,18 +63,7 @@ In suffix handling, `suffixNode.parts` is checked, but a suffix node might itsel
 
 The `tool_call` handler returns `undefined` (falls through) when `allCommands.length === 0`. This means commands that parse successfully but extract zero commands (e.g., pure variable assignments like `FOO=bar`) silently pass without any check. This ties into issue #2 — a standalone `FOO=$(rm -rf /)` would extract 0 commands from the top-level walk and be auto-approved.
 
-## Addressed
-
-### v1.1.0
-
-- **Issues 1, 2 (AST traversal gaps + bare assignments)**: Rewrote `extractAllCommandsFromAST` with explicit `switch` on all unbash node types: `Subshell`, `BraceGroup`, `If`, `While`, `For`, `Case`/`CaseItem`, `Function`, `Assignment`, and word nodes. A generic `Object.values` walk was attempted first but failed because unbash's `WordImpl` stores `parts` and `value` as non-enumerable prototype getters — `Object.values()` silently skips them. Added 7 new tests covering subshells, if/else, while, for, case, function definitions, and bare assignments with subshells.
-- **Bug (zero-command passthrough)**: Now caught by the bare assignment handling — `FOO=$(rm -rf /)` correctly extracts `rm`.
-
-### v1.1.1
-
-- **Priority issue 1 (`/unbash allow` multi-token parsing)**: Fixed command parsing in `extensions/index.ts` so `/unbash allow git status` stores `git status` (not just `git`). Added `parseUnbashArgs()` and tests in `test/command.test.ts` for multi-token parsing, whitespace normalization, and empty-target handling.
-
-### Still Open
+## Still Open
 
 - Issue 3 (config staleness) — low priority, works fine in practice
 - Issue 4 (settings.json race conditions) — no pi API available, documented as caveat
@@ -84,7 +73,7 @@ The `tool_call` handler returns `undefined` (falls through) when `allCommands.le
 
 ## Summary
 
-The architecture is right and the pi integration is clean. The main concern was **completeness of the AST traversal** — resolved in v1.1.0 with explicit node type handling and direct `parts` getter access to work around unbash's non-enumerable prototype properties.
+The architecture is right and the pi integration is clean. The main concern was **completeness of the AST traversal** — now resolved with explicit node type handling and direct `parts` getter access to work around unbash's non-enumerable prototype properties.
 
 ---
 
@@ -105,9 +94,9 @@ AST-based interception is the right approach for this threat model, and test cov
 
 ### Priority issues
 
-1. **Medium — No runtime validation of loaded config shape**
+1. **✅ Addressed (unreleased) — Runtime validation of loaded config shape**
    - File: `extensions/index.ts` (`loadConfig`)
-   - `parsed.unbash` is merged directly into defaults without checking types (`enabled` boolean, `alwaysAllowed` string[]).
+   - Added runtime validation and safe fallback behavior for invalid shape/fields.
 
 2. **Medium — Shared settings writes are non-atomic**
    - File: `extensions/index.ts` (`saveConfig`)

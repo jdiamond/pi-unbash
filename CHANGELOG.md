@@ -15,6 +15,9 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 - Command extraction for subshells inside double-quoted strings.
 - `/unbash allow` and `/unbash deny` parsing for multi-token commands.
+- Runtime validation for `unbash` settings loaded from `~/.pi/agent/settings.json`.
+- Safe fallback behavior for invalid config shape/fields (`enabled: true`, `alwaysAllowed: []`) to avoid permissive misconfiguration.
+- One-time warning surfacing (console + UI notification when available) for invalid loaded config.
 
 ## [1.0.0] - 2026-03-10
 ### Added
