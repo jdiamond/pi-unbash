@@ -162,7 +162,7 @@ function isSubsequence(needle: string[], haystack: string[]): boolean {
   return ni === needle.length;
 }
 
-/** Format an extracted command for display (name + first arg). */
+/** Format an extracted command for display (base command name only). */
 export function formatCommand(cmd: ExtractedCommand): string {
-  return cmd.args.length > 0 ? `${cmd.name} ${cmd.args[0]}` : cmd.name;
+  return cmd.name;
 }

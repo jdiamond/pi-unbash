@@ -41,7 +41,7 @@ Security: Unauthorized Command Detected
 The agent wants to execute:
 git commit -m "update files" && npm run build
 
-Unapproved commands: git commit, npm run
+Unapproved commands: git, npm
 
 Allow this execution?
 → Yes

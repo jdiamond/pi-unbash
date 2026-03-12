@@ -213,7 +213,7 @@ test("isCommandAllowed", async (t) => {
 test("formatCommand", async (t) => {
 
   await t.test("formats command with args", () => {
-    assert.equal(formatCommand({ name: "git", args: ["status"] }), "git status");
+    assert.equal(formatCommand({ name: "git", args: ["status"] }), "git");
   });
 
   await t.test("formats command without args", () => {

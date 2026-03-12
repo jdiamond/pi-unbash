@@ -11,6 +11,7 @@ All notable changes to this project will be documented in this file.
 ### Changed
 - Added `cd` to the default always-allowed command set.
 - Updated README examples/documentation for subcommand matching behavior.
+- Simplified unauthorized command display labels to base command names only (for example, `npm` instead of `npm run`).
 
 ### Fixed
 - Command extraction for subshells inside double-quoted strings.
