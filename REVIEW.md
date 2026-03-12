@@ -65,7 +65,7 @@ The `tool_call` handler returns `undefined` (falls through) when `allCommands.le
 
 ## Still Open
 
-- Issue 3 (config staleness) — low priority, works fine in practice
+- ~~Issue 3 (config staleness)~~ — won't fix; `/reload` re-runs `loadConfig` if needed
 - ~~Issue 4 (settings.json race conditions)~~ — won't fix; dev machine config touched only on explicit user action, not worth the complexity
 - ~~Issue 8 (missing devDependencies)~~ ✅ Added `@mariozechner/pi-coding-agent` to `devDependencies`
 
