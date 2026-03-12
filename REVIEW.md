@@ -51,9 +51,9 @@ if (!confirmed) return { block: true, reason: "User denied unparseable command."
 
 This also needs the `ctx.hasUI` check before trying `confirm`.
 
-### 7. Missing `CommandExpansion` in suffix parts recursion (Low — Robustness)
+### 7. ✅ Not a bug — `CommandExpansion` in suffix parts recursion
 
-In suffix handling, `suffixNode.parts` is checked, but a suffix node might itself be a `CommandExpansion` directly (not wrapped in parts). Worth verifying against `unbash`'s actual AST output for edge cases like `cmd $(nested)`.
+Verified against unbash's actual AST: a suffix node for `cmd $(nested)` has no `type` but carries a `parts` getter containing the `CommandExpansion`. This hits the `default` → `walkWordParts` path correctly. The "highly nested evil subshells" test already covers this.
 
 ### 8. No `devDependencies` for types (Nit)
 
