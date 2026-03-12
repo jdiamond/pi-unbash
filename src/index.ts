@@ -157,8 +157,17 @@ export default function (pi: ExtensionAPI) {
         config.enabled = !config.enabled;
         saveConfig(config);
         ctx.ui.notify(`pi-unbash is now ${config.enabled ? "ENABLED" : "DISABLED"}`, "info");
+      } else if (action === "list") {
+        const allowedList = config.alwaysAllowed.length > 0
+          ? config.alwaysAllowed.map(command => `- ${command}`).join("\n")
+          : "(none)";
+
+        ctx.ui.notify(
+          `pi-unbash: ${config.enabled ? "ENABLED" : "DISABLED"}\nAllowed commands:\n${allowedList}`,
+          "info"
+        );
       } else {
-        ctx.ui.notify("Usage: /unbash <allow|deny|toggle> [command]", "warning");
+        ctx.ui.notify("Usage: /unbash <allow|deny|toggle|list> [command]", "warning");
       }
     }
   });

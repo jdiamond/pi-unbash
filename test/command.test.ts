@@ -22,6 +22,10 @@ test("parseUnbashArgs", async (t) => {
     assert.deepEqual(parseUnbashArgs("toggle"), { action: "toggle", target: "" });
   });
 
+  await t.test("parses list action with no target", () => {
+    assert.deepEqual(parseUnbashArgs("list"), { action: "list", target: "" });
+  });
+
   await t.test("returns empty action/target for empty input", () => {
     assert.deepEqual(parseUnbashArgs("   "), { action: "", target: "" });
   });

@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 - Subcommand-level allowlist support (for example, allowing `git status` without allowing all `git` commands).
 - Subsequence-based allowlist matching so required tokens can be enforced while still permitting extra flags/arguments.
+- Added `/unbash list` to display current enabled status and allowlist entries.
 
 ### Changed
 - Added `cd` to the default always-allowed command set.

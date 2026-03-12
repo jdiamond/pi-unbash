@@ -83,6 +83,7 @@ You can manage your security settings dynamically mid-session using the `/unbash
 * `/unbash allow <command>` - Permanently allow a command (e.g., `/unbash allow git` or `/unbash allow git status`)
 * `/unbash deny <command>` - Remove a command from the allowed list (e.g., `/unbash deny git status`)
 * `/unbash toggle` - Turn the entire confirmation system on or off
+* `/unbash list` - Show current status and allowed commands
 
 Your settings are persisted globally inside pi's central `~/.pi/agent/settings.json` file under the `"unbash"` key:
 

@@ -33,9 +33,9 @@ If another process or extension modifies `settings.json` externally, the in-memo
 
 Raw `fs.readFileSync` / `fs.writeFileSync` on `~/.pi/agent/settings.json` is a shared file — other pi processes or extensions could write to it concurrently, causing race conditions or data loss. There's no file locking. The pi docs don't provide a settings API, so this may be the only option, but it's worth noting as a caveat.
 
-### 5. `/unbash` command lacks a `list` subcommand (Low — UX)
+### 5. ✅ Addressed — `/unbash list` subcommand added (Low — UX)
 
-Users can't see the current allowlist without opening `settings.json`. Add `/unbash list` to show the current config (enabled status + allowed commands).
+Implemented `/unbash list` to show current config (enabled status + allowed commands) directly in the UI.
 
 ### 6. Parse failures block unconditionally (Low — UX)
 
@@ -67,7 +67,6 @@ The `tool_call` handler returns `undefined` (falls through) when `allCommands.le
 
 - Issue 3 (config staleness) — low priority, works fine in practice
 - Issue 4 (settings.json race conditions) — no pi API available, documented as caveat
-- Issue 5 (`/unbash list` subcommand) — UX improvement, not yet added
 - Issue 8 (missing devDependencies) — not yet added
 
 ## Summary
@@ -105,5 +104,5 @@ AST-based interception is the right approach for this threat model, and test cov
    - File: `src/index.ts` (`tool_call`)
    - Both thrown parse failures and tolerant parser errors (`ast.errors`) now prompt in UI mode; non-UI mode remains security-first and blocks.
 
-4. **Low — Command UX gap (`/unbash list`)**
-   - Multi-token allow/deny parsing is now fixed, but a `/unbash list` command would improve discoverability/debugging.
+4. **✅ Addressed (unreleased) — Command UX gap (`/unbash list`)**
+   - Added `/unbash list` to show enabled status and allowlist entries directly in the UI.
