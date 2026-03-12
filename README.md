@@ -21,7 +21,7 @@ If the AI tries to sneak an unapproved command past you, `pi-unbash` will catch 
 You can install `pi-unbash` globally into your pi settings:
 
 ```bash
-# Install from npm (once published)
+# Install globally
 pi install npm:pi-unbash
 
 # Or install locally for testing
