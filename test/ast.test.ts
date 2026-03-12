@@ -3,18 +3,22 @@ import assert from "node:assert/strict";
 import { parse as parseBash } from "unbash";
 import { extractAllCommandsFromAST, isCommandAllowed, formatCommand } from "../src/ast.ts";
 
+/** Strip pos/end for deepEqual assertions that only care about name/args. */
+function stripPositions(cmds: ReturnType<typeof extractAllCommandsFromAST>) {
+  return cmds.map(({ name, args }) => ({ name, args }));
+}
 test("extractAllCommandsFromAST", async (t) => {
 
   await t.test("extracts simple command", () => {
     const ast = parseBash("ls -la");
     const cmds = extractAllCommandsFromAST(ast);
-    assert.deepEqual(cmds, [{ name: "ls", args: ["-la"] }]);
+    assert.deepEqual(stripPositions(cmds), [{ name: "ls", args: ["-la"] }]);
   });
 
   await t.test("extracts multiple commands from AndOr (&&)", () => {
     const ast = parseBash("git commit -m 'foo' && git push");
     const cmds = extractAllCommandsFromAST(ast);
-    assert.deepEqual(cmds, [
+    assert.deepEqual(stripPositions(cmds), [
       { name: "git", args: ["commit", "-m", "foo"] },
       { name: "git", args: ["push"] },
     ]);
@@ -23,7 +27,7 @@ test("extractAllCommandsFromAST", async (t) => {
   await t.test("extracts commands from pipes (|)", () => {
     const ast = parseBash("cat file.txt | grep 'foo' | wc -l");
     const cmds = extractAllCommandsFromAST(ast);
-    assert.deepEqual(cmds, [
+    assert.deepEqual(stripPositions(cmds), [
       { name: "cat", args: ["file.txt"] },
       { name: "grep", args: ["foo"] },
       { name: "wc", args: ["-l"] },
@@ -33,7 +37,7 @@ test("extractAllCommandsFromAST", async (t) => {
   await t.test("extracts commands from $() subshells", () => {
     const ast = parseBash("echo $(git status)");
     const cmds = extractAllCommandsFromAST(ast);
-    assert.deepEqual(cmds, [
+    assert.deepEqual(stripPositions(cmds), [
       { name: "echo", args: ["$(git status)"] },
       { name: "git", args: ["status"] },
     ]);
@@ -42,7 +46,7 @@ test("extractAllCommandsFromAST", async (t) => {
   await t.test("extracts commands from backtick subshells", () => {
     const ast = parseBash("FOO=`rm -rf /` node app.js");
     const cmds = extractAllCommandsFromAST(ast);
-    assert.deepEqual(cmds, [
+    assert.deepEqual(stripPositions(cmds), [
       { name: "node", args: ["app.js"] },
       { name: "rm", args: ["-rf", "/"] },
     ]);
@@ -51,7 +55,7 @@ test("extractAllCommandsFromAST", async (t) => {
   await t.test("extracts from highly nested evil subshells", () => {
     const ast = parseBash("echo $(cat file.txt | grep $(rm -rf /)) && curl http://evil.com");
     const cmds = extractAllCommandsFromAST(ast);
-    assert.deepEqual(cmds, [
+    assert.deepEqual(stripPositions(cmds), [
       { name: "echo", args: ["$(cat file.txt | grep $(rm -rf /))"] },
       { name: "cat", args: ["file.txt"] },
       { name: "grep", args: ["$(rm -rf /)"] },
@@ -63,7 +67,7 @@ test("extractAllCommandsFromAST", async (t) => {
   await t.test("extracts commands from subshell grouping", () => {
     const ast = parseBash("(rm -rf /; echo done)");
     const cmds = extractAllCommandsFromAST(ast);
-    assert.deepEqual(cmds, [
+    assert.deepEqual(stripPositions(cmds), [
       { name: "rm", args: ["-rf", "/"] },
       { name: "echo", args: ["done"] },
     ]);
@@ -72,7 +76,7 @@ test("extractAllCommandsFromAST", async (t) => {
   await t.test("extracts commands from if/then/else", () => {
     const ast = parseBash("if true; then rm -rf /; else echo safe; fi");
     const cmds = extractAllCommandsFromAST(ast);
-    assert.deepEqual(cmds, [
+    assert.deepEqual(stripPositions(cmds), [
       { name: "true", args: [] },
       { name: "rm", args: ["-rf", "/"] },
       { name: "echo", args: ["safe"] },
@@ -82,7 +86,7 @@ test("extractAllCommandsFromAST", async (t) => {
   await t.test("extracts commands from while loop", () => {
     const ast = parseBash("while true; do curl evil.com; done");
     const cmds = extractAllCommandsFromAST(ast);
-    assert.deepEqual(cmds, [
+    assert.deepEqual(stripPositions(cmds), [
       { name: "true", args: [] },
       { name: "curl", args: ["evil.com"] },
     ]);
@@ -91,7 +95,7 @@ test("extractAllCommandsFromAST", async (t) => {
   await t.test("extracts commands from for loop", () => {
     const ast = parseBash("for i in 1 2 3; do echo $i; done");
     const cmds = extractAllCommandsFromAST(ast);
-    assert.deepEqual(cmds, [
+    assert.deepEqual(stripPositions(cmds), [
       { name: "echo", args: ["$i"] },
     ]);
   });
@@ -99,7 +103,7 @@ test("extractAllCommandsFromAST", async (t) => {
   await t.test("extracts commands from case statement", () => {
     const ast = parseBash("case x in y) echo hi;; z) rm -rf /;; esac");
     const cmds = extractAllCommandsFromAST(ast);
-    assert.deepEqual(cmds, [
+    assert.deepEqual(stripPositions(cmds), [
       { name: "echo", args: ["hi"] },
       { name: "rm", args: ["-rf", "/"] },
     ]);
@@ -108,7 +112,7 @@ test("extractAllCommandsFromAST", async (t) => {
   await t.test("extracts commands from function definition", () => {
     const ast = parseBash("foo() { rm -rf /; }");
     const cmds = extractAllCommandsFromAST(ast);
-    assert.deepEqual(cmds, [
+    assert.deepEqual(stripPositions(cmds), [
       { name: "rm", args: ["-rf", "/"] },
     ]);
   });
@@ -116,7 +120,7 @@ test("extractAllCommandsFromAST", async (t) => {
   await t.test("extracts commands from bare assignment with subshell", () => {
     const ast = parseBash("FOO=$(rm -rf /)");
     const cmds = extractAllCommandsFromAST(ast);
-    assert.deepEqual(cmds, [
+    assert.deepEqual(stripPositions(cmds), [
       { name: "rm", args: ["-rf", "/"] },
     ]);
   });
@@ -124,13 +128,13 @@ test("extractAllCommandsFromAST", async (t) => {
   await t.test("extracts command with no arguments", () => {
     const ast = parseBash("pwd");
     const cmds = extractAllCommandsFromAST(ast);
-    assert.deepEqual(cmds, [{ name: "pwd", args: [] }]);
+    assert.deepEqual(stripPositions(cmds), [{ name: "pwd", args: [] }]);
   });
 
   await t.test("extracts commands from double-quoted subshells", () => {
     const ast = parseBash('echo "hello $(rm -rf /)"');
     const cmds = extractAllCommandsFromAST(ast);
-    assert.deepEqual(cmds, [
+    assert.deepEqual(stripPositions(cmds), [
       { name: "echo", args: ["hello $(rm -rf /)"] },
       { name: "rm", args: ["-rf", "/"] },
     ]);
@@ -139,7 +143,7 @@ test("extractAllCommandsFromAST", async (t) => {
   await t.test("does not extract from single-quoted strings", () => {
     const ast = parseBash("echo 'hello $(rm -rf /)'");
     const cmds = extractAllCommandsFromAST(ast);
-    assert.deepEqual(cmds, [
+    assert.deepEqual(stripPositions(cmds), [
       { name: "echo", args: ["hello $(rm -rf /)"] },
     ]);
   });
@@ -212,29 +216,22 @@ test("isCommandAllowed", async (t) => {
 
 test("formatCommand", async (t) => {
 
-  await t.test("includes first positional arg as subcommand", () => {
-    assert.equal(formatCommand({ name: "git", args: ["status"] }), "git status");
+  await t.test("shows exact raw slice of the command", () => {
+    assert.equal(formatCommand({ name: "git", args: ["commit"], pos: 0, end: 10 }, "git commit -am msg"), "git commit");
   });
 
-  await t.test("includes first positional arg, skipping leading flags", () => {
-    assert.equal(formatCommand({ name: "git", args: ["commit", "-am", "msg"] }), "git commit");
-    assert.equal(formatCommand({ name: "git", args: ["-C", "/tmp", "status"] }), "git /tmp");
+  await t.test("truncates long commands with ellipsis", () => {
+    const raw = `python3 -c "print('this is a very long message indeed')"`;
+    assert.equal(formatCommand({ name: "python3", args: ["-c", "print('this is a very long message indeed')"], pos: 0, end: raw.length }, raw), "python3 -c \"print('this is a very long m…");
   });
 
-  await t.test("omits positional when only flags present", () => {
-    assert.equal(formatCommand({ name: "ls", args: ["-la"] }), "ls");
+  await t.test("replaces newlines with ↵", () => {
+    const raw = "python3 -c \"print('hello\nworld')\"";
+    assert.equal(formatCommand({ name: "python3", args: ["-c", "print('hello\nworld')"], pos: 0, end: raw.length }, raw), "python3 -c \"print('hello↵world')\"");
   });
 
-  await t.test("formats command without args", () => {
-    assert.equal(formatCommand({ name: "pwd", args: [] }), "pwd");
-  });
-
-  await t.test("truncates long args with ellipsis", () => {
-    assert.equal(formatCommand({ name: "echo", args: ["this is a very long argument indeed"] }), `echo "this is a very long …"`);
-  });
-
-  await t.test("re-quotes args that contain spaces", () => {
-    assert.equal(formatCommand({ name: "echo", args: ["hello world"] }), `echo "hello world"`);
+  await t.test("does not truncate short commands", () => {
+    assert.equal(formatCommand({ name: "pwd", args: [], pos: 0, end: 3 }, "pwd"), "pwd");
   });
 
 });

@@ -2,6 +2,8 @@
 export interface ExtractedCommand {
   name: string;
   args: string[];
+  pos?: number;
+  end?: number;
 }
 
 export function extractAllCommandsFromAST(node: unknown): ExtractedCommand[] {
@@ -19,7 +21,12 @@ export function extractAllCommandsFromAST(node: unknown): ExtractedCommand[] {
       if (name?.text) {
         const suffix = n["suffix"] as Array<{ text?: string; value?: string }> | undefined;
         const args = suffix?.map(s => s.value ?? s.text ?? "") ?? [];
-        commands.push({ name: name.text, args });
+        commands.push({
+          name: name.text,
+          args,
+          pos: n["pos"] as number ?? 0,
+          end: n["end"] as number ?? 0,
+        });
       }
       walkArray(n["prefix"] as unknown[], commands);
       walkArray(n["suffix"] as unknown[], commands);
@@ -162,30 +169,20 @@ function isSubsequence(needle: string[], haystack: string[]): boolean {
   return ni === needle.length;
 }
 
-const FORMAT_COMMAND_MAX_ARG_LENGTH = 20;
+const FORMAT_COMMAND_MAX_LENGTH = 40;
 
-/** Format an extracted command for display.
+/**
+ * Format an extracted command for display using the original raw source string.
  *
- * Includes the first non-flag argument alongside the command name, so
- * subcommand-style CLIs (git, docker, npm, etc.) display as e.g. "git commit"
- * rather than just "git". For commands with only flags or no args, falls back
- * to the base name. Long args are truncated, and args with spaces are
- * re-quoted (the parser strips original quotes).
+ * Slices the raw command string by the command's pos/end offsets so the
+ * display reflects exactly what was typed. Newlines are replaced with ↵,
+ * and the result is truncated to FORMAT_COMMAND_MAX_LENGTH characters.
  */
-export function formatCommand(cmd: ExtractedCommand): string {
-  const firstPositional = cmd.args.find(a => !a.startsWith("-"));
-  if (!firstPositional) return cmd.name;
-
-  // The parser preserves outer quotes in arg values; strip them before formatting
-  const unquoted = firstPositional.replace(/^["']/, "").replace(/["']$/, "");
-
-  let display = unquoted.length > FORMAT_COMMAND_MAX_ARG_LENGTH
-    ? unquoted.slice(0, FORMAT_COMMAND_MAX_ARG_LENGTH) + "…"
-    : unquoted;
-
-  display = display.replace(/\s+/g, " ").trim();
-
-  if (display.includes(" ")) display = `"${display}"`;
-
-  return `${cmd.name} ${display}`;
+export function formatCommand(cmd: ExtractedCommand, raw: string): string {
+  let display = raw.slice(cmd.pos, cmd.end);
+  display = display.replace(/\n/g, "↵");
+  if (display.length > FORMAT_COMMAND_MAX_LENGTH) {
+    display = display.slice(0, FORMAT_COMMAND_MAX_LENGTH) + "…";
+  }
+  return display;
 }

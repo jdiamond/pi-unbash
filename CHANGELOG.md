@@ -8,11 +8,12 @@ All notable changes to this project will be documented in this file.
 - Subcommand-level allowlist support (for example, allowing `git status` without allowing all `git` commands).
 - Subsequence-based allowlist matching so required tokens can be enforced while still permitting extra flags/arguments.
 - Added `/unbash list` to display current enabled status and allowlist entries.
+- Expanded default allowlist to include `rg`, `head`, `tail`, `wc`, `true`, `basename`, `dirname`, `realpath`, `date`, `file`, `stat`, `uname`, `whoami`, `type`, `which`, `git blame`, `git branch --show-current`, `git diff`, `git log`, `git show`, and `git status`.
+- Confirmation prompt now shows a preview of each unapproved command, sliced from the original raw string. Newlines are replaced with `↵` and long commands are truncated at 40 characters with `…`.
 
 ### Changed
 - Added `cd` to the default always-allowed command set.
 - Updated README examples/documentation for subcommand matching behavior.
-- Simplified unauthorized command display labels to base command names only (for example, `npm` instead of `npm run`).
 - Streamlined the UI confirmation prompt copy/layout to match pi's minimal interface (clearer unapproved-command heading, improved spacing, compact command list).
 
 ### Fixed

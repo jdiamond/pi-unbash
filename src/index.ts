@@ -250,12 +250,12 @@ export default function (pi: ExtensionAPI) {
     if (!ctx.hasUI) {
       return { 
         block: true, 
-        reason: `Commands [${unauthorizedCommands.map(formatCommand).join(", ")}] require UI confirmation.` 
+        reason: `Commands [${unauthorizedCommands.map(c => formatCommand(c, rawCmd)).join(", ")}] require UI confirmation.` 
       };
     }
 
     // Deduplicate for display
-    const uniqueUnauthorized = Array.from(new Set(unauthorizedCommands.map(formatCommand)));
+    const uniqueUnauthorized = Array.from(new Set(unauthorizedCommands.map(c => formatCommand(c, rawCmd))));
 
     const confirmed = await ctx.ui.confirm(
       `⚠️ Unapproved Commands`,
