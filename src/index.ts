@@ -163,9 +163,12 @@ export default function (pi: ExtensionAPI) {
         const allowedList = config.alwaysAllowed.length > 0
           ? config.alwaysAllowed.map(command => `- ${command}`).join("\n")
           : "(none)";
+        const sessionList = sessionAllowed.length > 0
+          ? sessionAllowed.map(command => `- ${command}`).join("\n")
+          : "(none)";
 
         ctx.ui.notify(
-          `pi-unbash: ${config.enabled ? "ENABLED" : "DISABLED"}\nAllowed commands:\n${allowedList}`,
+          `pi-unbash: ${config.enabled ? "ENABLED" : "DISABLED"}\nAllowed commands:\n${allowedList}\nSession-allowed commands:\n${sessionList}`,
           "info"
         );
       } else {
