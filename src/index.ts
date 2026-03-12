@@ -247,12 +247,12 @@ export default function (pi: ExtensionAPI) {
     // Deduplicate for display
     const uniqueUnauthorized = Array.from(new Set(unauthorizedCommands.map(c => formatCommand(c, rawCmd))));
 
-    const confirmed = await ctx.ui.confirm(
-      `⚠️ Unapproved Commands`,
-      `\n${uniqueUnauthorized.map(c => `- ${c}`).join("\n")}\n\nProceed?`
+    const choice = await ctx.ui.select(
+      `⚠️ Unapproved Commands\n\n${uniqueUnauthorized.map(c => `- ${c}`).join("\n")}`,
+      ["Yes", "No"]
     );
 
-    if (!confirmed) {
+    if (choice !== "Yes") {
       return { block: true, reason: "User denied execution." };
     }
   });
