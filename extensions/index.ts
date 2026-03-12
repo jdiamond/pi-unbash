@@ -207,8 +207,8 @@ export default function (pi: ExtensionAPI) {
     const uniqueUnauthorized = Array.from(new Set(unauthorizedCommands.map(formatCommand)));
 
     const confirmed = await ctx.ui.confirm(
-      "Security: Unauthorized Command Detected",
-      `The agent wants to execute:\n\n${rawCmd}\n\nUnapproved commands: ${uniqueUnauthorized.join(", ")}\n\nAllow this execution?`
+      `⚠️ Unapproved commands: ${uniqueUnauthorized.join(", ")}`,
+      "Proceed?"
     );
 
     if (!confirmed) {
