@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- Session-scoped approval: confirmation prompt now offers "Always allow X (this session)" to allow a base command for the duration of the session without persisting to `settings.json`.
+
+### Changed
+- Confirmation prompt now uses a select dialog with `Allow`, `Always allow X (this session)`, and `Reject` options instead of a yes/no confirm dialog.
+- Extracted default allowlist to `src/defaults.ts`; README links to it instead of repeating the list.
+
 ## [1.1.0] - 2026-03-11
 
 ### Added

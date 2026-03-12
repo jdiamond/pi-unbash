@@ -126,6 +126,7 @@ export default function (pi: ExtensionAPI) {
   const loaded = loadConfig();
   let config = loaded.config;
   let configWarning = loaded.warning;
+  const sessionAllowed: string[] = [];
 
   if (configWarning) {
     console.warn(`[pi-unbash] ${configWarning}`);
@@ -229,8 +230,10 @@ export default function (pi: ExtensionAPI) {
     
     if (allCommands.length === 0) return;
 
-    // Find all commands that are NOT in the allow list
-    const unauthorizedCommands = allCommands.filter(cmd => !isCommandAllowed(cmd, config.alwaysAllowed));
+    // Find all commands that are NOT in the allow list or session list
+    const unauthorizedCommands = allCommands.filter(
+      cmd => !isCommandAllowed(cmd, config.alwaysAllowed) && !isCommandAllowed(cmd, sessionAllowed)
+    );
 
     // If every single extracted command is in the allow-list, let it pass silently!
     if (unauthorizedCommands.length === 0) {
@@ -246,13 +249,24 @@ export default function (pi: ExtensionAPI) {
 
     // Deduplicate for display
     const uniqueUnauthorized = Array.from(new Set(unauthorizedCommands.map(c => formatCommand(c, rawCmd))));
+    const uniqueBaseNames = Array.from(new Set(unauthorizedCommands.map(c => c.name)));
+    const alwaysLabel = `Always allow ${uniqueBaseNames.join(", ")} (this session)`;
 
     const choice = await ctx.ui.select(
       `⚠️ Unapproved Commands\n\n${uniqueUnauthorized.map(c => `- ${c}`).join("\n")}`,
-      ["Yes", "No"]
+      ["Allow", alwaysLabel, "Reject"]
     );
 
-    if (choice !== "Yes") {
+    if (choice === alwaysLabel) {
+      for (const name of uniqueBaseNames) {
+        if (!sessionAllowed.includes(name)) {
+          sessionAllowed.push(name);
+        }
+      }
+      return;
+    }
+
+    if (choice !== "Allow") {
       return { block: true, reason: "User denied execution." };
     }
   });
