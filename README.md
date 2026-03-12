@@ -37,13 +37,15 @@ If the AI attempts to run anything else (e.g., `git commit`, `npm`, `rm`, `node`
 ```text
 ⚠️ Unapproved Commands
 
-- git commit -m "update files" && npm…
-- npm run build
+ - git commit -m "update files" && npm…
+ - npm run build
 
-Proceed?
-→ Yes
-  No
+ → Allow
+   Always allow git, npm (this session)
+   Reject
 ```
+
+**Allow** runs the command once. **Always allow X (this session)** adds the base command(s) to an in-memory allowlist for the rest of the session — no prompts for that command again until you reload. **Reject** blocks execution.
 
 ### Subcommand Control
 
