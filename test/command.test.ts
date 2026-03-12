@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseUnbashArgs } from "../extensions/index.ts";
+import { parseUnbashArgs } from "../src/index.ts";
 
 test("parseUnbashArgs", async (t) => {
   await t.test("parses single-token target", () => {

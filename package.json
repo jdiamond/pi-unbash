@@ -21,7 +21,7 @@
     "url": "https://github.com/jdiamond/pi-unbash/issues"
   },
   "files": [
-    "extensions",
+    "src",
     "README.md"
   ],
   "type": "module",
@@ -31,7 +31,7 @@
   },
   "pi": {
     "extensions": [
-      "./extensions/index.ts"
+      "./src/index.ts"
     ]
   },
   "dependencies": {

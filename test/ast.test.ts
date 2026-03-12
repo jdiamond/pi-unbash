@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parse as parseBash } from "unbash";
-import { extractAllCommandsFromAST, isCommandAllowed, formatCommand } from "../extensions/ast.ts";
+import { extractAllCommandsFromAST, isCommandAllowed, formatCommand } from "../src/ast.ts";
 
 test("extractAllCommandsFromAST", async (t) => {
 

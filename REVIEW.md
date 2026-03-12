@@ -95,15 +95,15 @@ AST-based interception is the right approach for this threat model, and test cov
 ### Priority issues
 
 1. **✅ Addressed (unreleased) — Runtime validation of loaded config shape**
-   - File: `extensions/index.ts` (`loadConfig`)
+   - File: `src/index.ts` (`loadConfig`)
    - Added runtime validation and safe fallback behavior for invalid shape/fields.
 
 2. **Medium — Shared settings writes are non-atomic**
-   - File: `extensions/index.ts` (`saveConfig`)
+   - File: `src/index.ts` (`saveConfig`)
    - Read-modify-write on `~/.pi/agent/settings.json` can race with other writers and lose updates.
 
 3. **Low/Medium — Parse errors are hard-blocked with no UI override**
-   - File: `extensions/index.ts` (`tool_call`)
+   - File: `src/index.ts` (`tool_call`)
    - Security-first default is reasonable, but in UI mode a confirmation fallback would improve usability.
 
 4. **Low — Command UX gap (`/unbash list`)**
