@@ -30,20 +30,17 @@ pi -e ./path/to/pi-unbash
 
 ## Usage
 
-By default, `pi-unbash` allows harmless read-only commands to execute silently:
-`ls`, `pwd`, `cd`, `cat`, `echo`, `grep`, `find`.
+By default, `pi-unbash` allows a broad set of safe, read-only commands to execute silently, including common utilities (`ls`, `pwd`, `cd`, `cat`, `echo`, `grep`, `find`, `rg`, `head`, `tail`, `wc`, `true`, and more), path and system-info tools (`basename`, `dirname`, `realpath`, `date`, `file`, `stat`, `uname`, `whoami`, `type`, `which`), and read-only git commands (`git status`, `git diff`, `git log`, `git show`, `git blame`, `git branch --show-current`).
 
-If the AI attempts to run anything else (e.g., `git`, `npm`, `rm`, `node`), the execution is paused, and a confirmation dialog appears in your `pi` session:
+If the AI attempts to run anything else (e.g., `git commit`, `npm`, `rm`, `node`), the execution is paused, and a confirmation dialog appears in your `pi` session:
 
 ```text
-Security: Unauthorized Command Detected
+⚠️ Unapproved Commands
 
-The agent wants to execute:
-git commit -m "update files" && npm run build
+- git commit -m "update files" && npm…
+- npm run build
 
-Unapproved commands: git, npm
-
-Allow this execution?
+Proceed?
 → Yes
   No
 ```
