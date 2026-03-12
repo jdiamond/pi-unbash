@@ -180,7 +180,38 @@ export default function (pi: ExtensionAPI) {
     try {
       ast = parseBash(rawCmd);
     } catch (e) {
-      return { block: true, reason: `Failed to parse bash AST. Command rejected for safety.` };
+      if (!ctx.hasUI) {
+        return { block: true, reason: "Failed to parse bash AST. Command rejected for safety." };
+      }
+
+      const confirmed = await ctx.ui.confirm(
+        "⚠️ Could not parse command safely",
+        "Allow anyway?"
+      );
+
+      if (!confirmed) {
+        return { block: true, reason: "User denied unparseable command." };
+      }
+
+      return;
+    }
+
+    if (Array.isArray(ast.errors) && ast.errors.length > 0) {
+      if (!ctx.hasUI) {
+        return { block: true, reason: "Bash AST contains parse errors. Command rejected for safety." };
+      }
+
+      const firstError = ast.errors[0] ?? { message: "unknown parse error", pos: -1 };
+      const confirmed = await ctx.ui.confirm(
+        "⚠️ Command parsed with errors",
+        `First error: ${firstError.message} at ${firstError.pos}\n\nAllow anyway?`
+      );
+
+      if (!confirmed) {
+        return { block: true, reason: "User denied command with parse errors." };
+      }
+
+      return;
     }
 
     // Extract EVERY command in the tree (including pipes, gates, subshells)

@@ -20,6 +20,9 @@ All notable changes to this project will be documented in this file.
 - Runtime validation for `unbash` settings loaded from `~/.pi/agent/settings.json`.
 - Safe fallback behavior for invalid config shape/fields (`enabled: true`, `alwaysAllowed: []`) to avoid permissive misconfiguration.
 - One-time warning surfacing (console + UI notification when available) for invalid loaded config.
+- Parse failures now fall back to UI confirmation instead of unconditional blocking when UI is available.
+- Tolerant `unbash` parse errors (`ast.errors`) now trigger the same confirmation fallback in UI mode.
+- Parse-error confirmation prompts were simplified to minimal copy (no command echo).
 
 ## [1.0.0] - 2026-03-10
 ### Added

@@ -68,7 +68,6 @@ The `tool_call` handler returns `undefined` (falls through) when `allCommands.le
 - Issue 3 (config staleness) — low priority, works fine in practice
 - Issue 4 (settings.json race conditions) — no pi API available, documented as caveat
 - Issue 5 (`/unbash list` subcommand) — UX improvement, not yet added
-- Issue 6 (parse failure hard block) — should fall back to confirmation dialog
 - Issue 8 (missing devDependencies) — not yet added
 
 ## Summary
@@ -102,9 +101,9 @@ AST-based interception is the right approach for this threat model, and test cov
    - File: `src/index.ts` (`saveConfig`)
    - Read-modify-write on `~/.pi/agent/settings.json` can race with other writers and lose updates.
 
-3. **Low/Medium — Parse errors are hard-blocked with no UI override**
+3. **✅ Addressed (unreleased) — Parse failures now support UI confirmation fallback**
    - File: `src/index.ts` (`tool_call`)
-   - Security-first default is reasonable, but in UI mode a confirmation fallback would improve usability.
+   - Both thrown parse failures and tolerant parser errors (`ast.errors`) now prompt in UI mode; non-UI mode remains security-first and blocks.
 
 4. **Low — Command UX gap (`/unbash list`)**
    - Multi-token allow/deny parsing is now fixed, but a `/unbash list` command would improve discoverability/debugging.
