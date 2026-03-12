@@ -54,6 +54,16 @@ function saveConfig(config: UnbashConfig) {
   }
 }
 
+export function parseUnbashArgs(args: string): { action: string; target: string } {
+  const trimmed = args.trim();
+  if (!trimmed) return { action: "", target: "" };
+
+  const [action = "", ...targetParts] = trimmed.split(/\s+/);
+  const target = targetParts.join(" ").trim();
+
+  return { action, target };
+}
+
 export default function (pi: ExtensionAPI) {
   let config = loadConfig();
 
@@ -61,9 +71,7 @@ export default function (pi: ExtensionAPI) {
   pi.registerCommand("unbash", {
     description: "Manage pi-unbash security settings",
     handler: async (args, ctx) => {
-      const parts = args.trim().split(" ");
-      const action = parts[0];
-      const target = parts[1];
+      const { action, target } = parseUnbashArgs(args);
 
       if (action === "allow" && target) {
         if (!config.alwaysAllowed.includes(target)) {

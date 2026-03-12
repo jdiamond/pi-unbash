@@ -70,13 +70,16 @@ The `tool_call` handler returns `undefined` (falls through) when `allCommands.le
 - **Issues 1, 2 (AST traversal gaps + bare assignments)**: Rewrote `extractAllCommandsFromAST` with explicit `switch` on all unbash node types: `Subshell`, `BraceGroup`, `If`, `While`, `For`, `Case`/`CaseItem`, `Function`, `Assignment`, and word nodes. A generic `Object.values` walk was attempted first but failed because unbash's `WordImpl` stores `parts` and `value` as non-enumerable prototype getters — `Object.values()` silently skips them. Added 7 new tests covering subshells, if/else, while, for, case, function definitions, and bare assignments with subshells.
 - **Bug (zero-command passthrough)**: Now caught by the bare assignment handling — `FOO=$(rm -rf /)` correctly extracts `rm`.
 
+### v1.1.1
+
+- **Priority issue 1 (`/unbash allow` multi-token parsing)**: Fixed command parsing in `extensions/index.ts` so `/unbash allow git status` stores `git status` (not just `git`). Added `parseUnbashArgs()` and tests in `test/command.test.ts` for multi-token parsing, whitespace normalization, and empty-target handling.
+
 ### Still Open
 
 - Issue 3 (config staleness) — low priority, works fine in practice
 - Issue 4 (settings.json race conditions) — no pi API available, documented as caveat
 - Issue 5 (`/unbash list` subcommand) — UX improvement, not yet added
 - Issue 6 (parse failure hard block) — should fall back to confirmation dialog
-- Issue 7 (suffix CommandExpansion) — resolved by explicit `parts` access
 - Issue 8 (missing devDependencies) — not yet added
 
 ## Summary
@@ -102,23 +105,17 @@ AST-based interception is the right approach for this threat model, and test cov
 
 ### Priority issues
 
-1. **High — `/unbash allow` cannot currently store multi-token entries**
-   - File: `extensions/index.ts`
-   - Current argument parsing uses `args.trim().split(" ")` and only reads `parts[1]`, so `/unbash allow git status` is treated as `git`.
-   - This conflicts with README guidance and prevents intended subcommand granularity.
-
-2. **Medium — No runtime validation of loaded config shape**
+1. **Medium — No runtime validation of loaded config shape**
    - File: `extensions/index.ts` (`loadConfig`)
    - `parsed.unbash` is merged directly into defaults without checking types (`enabled` boolean, `alwaysAllowed` string[]).
 
-3. **Medium — Shared settings writes are non-atomic**
+2. **Medium — Shared settings writes are non-atomic**
    - File: `extensions/index.ts` (`saveConfig`)
    - Read-modify-write on `~/.pi/agent/settings.json` can race with other writers and lose updates.
 
-4. **Low/Medium — Parse errors are hard-blocked with no UI override**
+3. **Low/Medium — Parse errors are hard-blocked with no UI override**
    - File: `extensions/index.ts` (`tool_call`)
    - Security-first default is reasonable, but in UI mode a confirmation fallback would improve usability.
 
-5. **Low — Command UX gap**
-   - README suggests dynamic command control with multi-token entries; implementation does not yet fully match this behavior.
-   - A `/unbash list` command would improve discoverability/debugging.
+4. **Low — Command UX gap (`/unbash list`)**
+   - Multi-token allow/deny parsing is now fixed, but a `/unbash list` command would improve discoverability/debugging.
