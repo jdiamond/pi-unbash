@@ -162,7 +162,30 @@ function isSubsequence(needle: string[], haystack: string[]): boolean {
   return ni === needle.length;
 }
 
-/** Format an extracted command for display (base command name only). */
+const FORMAT_COMMAND_MAX_ARG_LENGTH = 20;
+
+/** Format an extracted command for display.
+ *
+ * Includes the first non-flag argument alongside the command name, so
+ * subcommand-style CLIs (git, docker, npm, etc.) display as e.g. "git commit"
+ * rather than just "git". For commands with only flags or no args, falls back
+ * to the base name. Long args are truncated, and args with spaces are
+ * re-quoted (the parser strips original quotes).
+ */
 export function formatCommand(cmd: ExtractedCommand): string {
-  return cmd.name;
+  const firstPositional = cmd.args.find(a => !a.startsWith("-"));
+  if (!firstPositional) return cmd.name;
+
+  // The parser preserves outer quotes in arg values; strip them before formatting
+  const unquoted = firstPositional.replace(/^["']/, "").replace(/["']$/, "");
+
+  let display = unquoted.length > FORMAT_COMMAND_MAX_ARG_LENGTH
+    ? unquoted.slice(0, FORMAT_COMMAND_MAX_ARG_LENGTH) + "…"
+    : unquoted;
+
+  display = display.replace(/\s+/g, " ").trim();
+
+  if (display.includes(" ")) display = `"${display}"`;
+
+  return `${cmd.name} ${display}`;
 }

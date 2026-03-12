@@ -212,12 +212,29 @@ test("isCommandAllowed", async (t) => {
 
 test("formatCommand", async (t) => {
 
-  await t.test("formats command with args", () => {
-    assert.equal(formatCommand({ name: "git", args: ["status"] }), "git");
+  await t.test("includes first positional arg as subcommand", () => {
+    assert.equal(formatCommand({ name: "git", args: ["status"] }), "git status");
+  });
+
+  await t.test("includes first positional arg, skipping leading flags", () => {
+    assert.equal(formatCommand({ name: "git", args: ["commit", "-am", "msg"] }), "git commit");
+    assert.equal(formatCommand({ name: "git", args: ["-C", "/tmp", "status"] }), "git /tmp");
+  });
+
+  await t.test("omits positional when only flags present", () => {
+    assert.equal(formatCommand({ name: "ls", args: ["-la"] }), "ls");
   });
 
   await t.test("formats command without args", () => {
     assert.equal(formatCommand({ name: "pwd", args: [] }), "pwd");
+  });
+
+  await t.test("truncates long args with ellipsis", () => {
+    assert.equal(formatCommand({ name: "echo", args: ["this is a very long argument indeed"] }), `echo "this is a very long …"`);
+  });
+
+  await t.test("re-quotes args that contain spaces", () => {
+    assert.equal(formatCommand({ name: "echo", args: ["hello world"] }), `echo "hello world"`);
   });
 
 });
