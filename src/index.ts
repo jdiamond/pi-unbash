@@ -194,8 +194,8 @@ export default function (pi: ExtensionAPI) {
       }
 
       const confirmed = await ctx.ui.confirm(
-        "⚠️ Could not parse command safely",
-        "Allow anyway?"
+        "⚠️ Could Not Parse Command Safely",
+        "\nAllow anyway?"
       );
 
       if (!confirmed) {
@@ -212,8 +212,8 @@ export default function (pi: ExtensionAPI) {
 
       const firstError = ast.errors[0] ?? { message: "unknown parse error", pos: -1 };
       const confirmed = await ctx.ui.confirm(
-        "⚠️ Command parsed with errors",
-        `First error: ${firstError.message} at ${firstError.pos}\n\nAllow anyway?`
+        "⚠️ Command Parsed With Errors",
+        `\nFirst error: ${firstError.message} at ${firstError.pos}\n\nAllow anyway?`
       );
 
       if (!confirmed) {
@@ -247,8 +247,8 @@ export default function (pi: ExtensionAPI) {
     const uniqueUnauthorized = Array.from(new Set(unauthorizedCommands.map(formatCommand)));
 
     const confirmed = await ctx.ui.confirm(
-      `⚠️ Unapproved commands: ${uniqueUnauthorized.join(", ")}`,
-      "Proceed?"
+      `⚠️ Unapproved Commands`,
+      `\n${uniqueUnauthorized.map(c => `- ${c}`).join("\n")}\n\nProceed?`
     );
 
     if (!confirmed) {
