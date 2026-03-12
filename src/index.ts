@@ -5,6 +5,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { extractAllCommandsFromAST, isCommandAllowed, formatCommand } from "./ast.ts";
+import { DEFAULT_ALWAYS_ALLOWED } from "./defaults.ts";
 
 // 1. Define configuration storage using pi's native settings.json
 const AGENT_DIR = path.join(os.homedir(), ".pi", "agent");
@@ -22,18 +23,7 @@ interface LoadedConfigResult {
 
 const DEFAULT_CONFIG: UnbashConfig = {
   enabled: true,
-  alwaysAllowed: [
-    // Basic read-only utilities
-    "cat", "cd", "echo", "find", "grep", "head", "ls", "pwd", "rg", "tail", "true", "wc",
-    // Path utilities
-    "basename", "dirname", "realpath",
-    // System info
-    "date", "file", "stat", "uname", "whoami",
-    // Tool discovery
-    "type", "which",
-    // Read-only git
-    "git blame", "git branch --show-current", "git diff", "git log", "git show", "git status",
-  ],
+  alwaysAllowed: DEFAULT_ALWAYS_ALLOWED,
 };
 
 const SAFE_FALLBACK_CONFIG: UnbashConfig = {

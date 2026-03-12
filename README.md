@@ -30,7 +30,7 @@ pi -e ./path/to/pi-unbash
 
 ## Usage
 
-By default, `pi-unbash` allows a broad set of safe, read-only commands to execute silently, including common utilities (`ls`, `pwd`, `cd`, `cat`, `echo`, `grep`, `find`, `rg`, `head`, `tail`, `wc`, `true`, and more), path and system-info tools (`basename`, `dirname`, `realpath`, `date`, `file`, `stat`, `uname`, `whoami`, `type`, `which`), and read-only git commands (`git status`, `git diff`, `git log`, `git show`, `git blame`, `git branch --show-current`).
+By default, `pi-unbash` allows a set of safe, read-only commands to execute silently. See [`src/defaults.ts`](src/defaults.ts) for the full list.
 
 If the AI attempts to run anything else (e.g., `git commit`, `npm`, `rm`, `node`), the execution is paused, and a confirmation dialog appears in your `pi` session:
 
