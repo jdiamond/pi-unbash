@@ -49,6 +49,29 @@ If the AI attempts to run anything else (e.g., `git commit`, `npm`, `rm`, `node`
 
 ## Configuration
 
+Settings are persisted globally in `~/.pi/agent/settings.json` under the `"unbash"` key:
+
+```json
+{
+  "packages": [
+    "npm:pi-unbash"
+  ],
+  "unbash": {
+    "enabled": true,
+    "alwaysAllowed": [
+      "ls",
+      "pwd",
+      "cd",
+      "cat",
+      "echo",
+      "grep",
+      "find",
+      "git"
+    ]
+  }
+}
+```
+
 ### Allowlist
 
 The `alwaysAllowed` setting controls which commands pass silently. You can allow a base command (all subcommands), or a specific subcommand (only matching invocations):
@@ -76,29 +99,6 @@ Matching uses **subsequence logic** — the tokens in your allowlist entry must 
 | `git status` | `git status`, `git status --short` | `git commit -m "msg"` |
 | `git branch --show-current` | `git branch --show-current`, `git branch -v --show-current` | `git branch -D main` |
 | `jira issue view` | `jira issue view PROJ-123`, `jira issue view --verbose PROJ-123` | `jira issue create` |
-
-Settings are persisted globally in `~/.pi/agent/settings.json` under the `"unbash"` key:
-
-```json
-{
-  "packages": [
-    "npm:pi-unbash"
-  ],
-  "unbash": {
-    "enabled": true,
-    "alwaysAllowed": [
-      "ls",
-      "pwd",
-      "cd",
-      "cat",
-      "echo",
-      "grep",
-      "find",
-      "git"
-    ]
-  }
-}
-```
 
 ### Commands
 
