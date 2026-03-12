@@ -66,7 +66,7 @@ The `tool_call` handler returns `undefined` (falls through) when `allCommands.le
 ## Still Open
 
 - Issue 3 (config staleness) — low priority, works fine in practice
-- Issue 4 (settings.json race conditions) — no pi API available, documented as caveat
+- ~~Issue 4 (settings.json race conditions)~~ — won't fix; dev machine config touched only on explicit user action, not worth the complexity
 - ~~Issue 8 (missing devDependencies)~~ ✅ Added `@mariozechner/pi-coding-agent` to `devDependencies`
 
 ## Summary
@@ -96,9 +96,8 @@ AST-based interception is the right approach for this threat model, and test cov
    - File: `src/index.ts` (`loadConfig`)
    - Added runtime validation and safe fallback behavior for invalid shape/fields.
 
-2. **Medium — Shared settings writes are non-atomic**
-   - File: `src/index.ts` (`saveConfig`)
-   - Read-modify-write on `~/.pi/agent/settings.json` can race with other writers and lose updates.
+2. **Won't fix — Shared settings writes are non-atomic**
+   - Dev machine config touched only on explicit `/unbash` commands. Complexity of atomic rename + edge cases (symlinks, etc.) not worth it for this use case.
 
 3. **✅ Addressed (unreleased) — Parse failures now support UI confirmation fallback**
    - File: `src/index.ts` (`tool_call`)
