@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 - Session-scoped approval: confirmation prompt now offers "Always allow X (this session)" to allow a base command for the duration of the session without persisting to `settings.json`.
+- `/unbash list` now shows session-allowed commands alongside permanently allowed commands.
 
 ### Changed
 - Confirmation prompt now uses a select dialog with `Allow`, `Always allow X (this session)`, and `Reject` options instead of a yes/no confirm dialog.
