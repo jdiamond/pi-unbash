@@ -67,7 +67,7 @@ The `tool_call` handler returns `undefined` (falls through) when `allCommands.le
 
 - Issue 3 (config staleness) — low priority, works fine in practice
 - Issue 4 (settings.json race conditions) — no pi API available, documented as caveat
-- Issue 8 (missing devDependencies) — not yet added
+- ~~Issue 8 (missing devDependencies)~~ ✅ Added `@mariozechner/pi-coding-agent` to `devDependencies`
 
 ## Summary
 
