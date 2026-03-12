@@ -47,9 +47,11 @@ If the AI attempts to run anything else (e.g., `git commit`, `npm`, `rm`, `node`
 
 **Allow** runs the command once. **Always allow X (this session)** adds the base command(s) to an in-memory allowlist for the rest of the session — no prompts for that command again until you reload. **Reject** blocks execution.
 
-### Subcommand Control
+## Configuration
 
-You can allow specific subcommands without allowing the entire base command. For example, you might want `git status` and `git log` to pass silently, but still be prompted for `git commit` or `git push`:
+### Allowlist
+
+The `alwaysAllowed` setting controls which commands pass silently. You can allow a base command (all subcommands), or a specific subcommand (only matching invocations):
 
 ```json
 {
@@ -75,16 +77,7 @@ Matching uses **subsequence logic** — the tokens in your allowlist entry must 
 | `git branch --show-current` | `git branch --show-current`, `git branch -v --show-current` | `git branch -D main` |
 | `jira issue view` | `jira issue view PROJ-123`, `jira issue view --verbose PROJ-123` | `jira issue create` |
 
-## Configuration & Commands
-
-You can manage your security settings dynamically mid-session using the `/unbash` interactive command:
-
-* `/unbash allow <command>` - Permanently allow a command (e.g., `/unbash allow git` or `/unbash allow git status`)
-* `/unbash deny <command>` - Remove a command from the allowed list (e.g., `/unbash deny git status`)
-* `/unbash toggle` - Turn the entire confirmation system on or off
-* `/unbash list` - Show current status and allowed commands
-
-Your settings are persisted globally inside pi's central `~/.pi/agent/settings.json` file under the `"unbash"` key:
+Settings are persisted globally in `~/.pi/agent/settings.json` under the `"unbash"` key:
 
 ```json
 {
@@ -106,6 +99,15 @@ Your settings are persisted globally inside pi's central `~/.pi/agent/settings.j
   }
 }
 ```
+
+### Commands
+
+You can manage settings dynamically mid-session using the `/unbash` command:
+
+* `/unbash allow <command>` - Permanently allow a command (e.g., `/unbash allow git` or `/unbash allow git status`)
+* `/unbash deny <command>` - Remove a command from the allowed list (e.g., `/unbash deny git status`)
+* `/unbash toggle` - Turn the entire confirmation system on or off
+* `/unbash list` - Show current status, allowed commands, and session-allowed commands
 
 ## License
 
