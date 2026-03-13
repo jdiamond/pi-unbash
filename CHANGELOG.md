@@ -7,6 +7,9 @@ All notable changes to this project will be documented in this file.
 ### Added
 - Session-scoped approval: confirmation prompt now offers "Always allow X (this session)" to allow a base command for the duration of the session without persisting to `settings.json`.
 - `/unbash list` now shows session-allowed commands alongside permanently allowed commands.
+- Smart command display: the command name is always shown verbatim. Path arguments (starting with `/`, `~/`, `./`, or `../`) get path-aware elision (e.g. `/Users/jdiamond/code/pi-unbash` → `/Users/…/pi-unbash`). Other long arguments are prefix-truncated at `commandDisplayArgMaxLength` chars with `…`. If the total display exceeds `commandDisplayMaxLength`, the whole string is hard-truncated. Original quoting is preserved and whitespace is normalized via per-argument source positions from the AST.
+- `commandDisplayMaxLength` and `commandDisplayArgMaxLength` settings in `settings.json` control the total display budget and per-argument truncation length (defaults: `64` and `20`).
+- Added `sort` and `uniq` to the default allowed commands.
 
 ### Changed
 - Confirmation prompt now uses a select dialog with `Allow`, `Always allow X (this session)`, and `Reject` options instead of a yes/no confirm dialog.

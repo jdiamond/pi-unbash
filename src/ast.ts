@@ -2,6 +2,8 @@
 export interface ExtractedCommand {
   name: string;
   args: string[];
+  /** Source positions of each argument token, for display with original quoting. */
+  argRanges?: Array<{ pos: number; end: number }>;
   pos?: number;
   end?: number;
 }
@@ -19,11 +21,15 @@ export function extractAllCommandsFromAST(node: unknown): ExtractedCommand[] {
     case "Command": {
       const name = n["name"] as { text?: string } | undefined;
       if (name?.text) {
-        const suffix = n["suffix"] as Array<{ text?: string; value?: string }> | undefined;
+        const suffix = n["suffix"] as Array<{ text?: string; value?: string; pos?: number; end?: number }> | undefined;
         const args = suffix?.map(s => s.value ?? s.text ?? "") ?? [];
+        const argRanges = suffix
+          ?.filter(s => s.pos != null && s.end != null)
+          .map(s => ({ pos: s.pos as number, end: s.end as number }));
         commands.push({
           name: name.text,
           args,
+          ...(argRanges?.length === args.length ? { argRanges } : {}),
           pos: n["pos"] as number ?? 0,
           end: n["end"] as number ?? 0,
         });
@@ -169,20 +175,77 @@ function isSubsequence(needle: string[], haystack: string[]): boolean {
   return ni === needle.length;
 }
 
-const FORMAT_COMMAND_MAX_LENGTH = 40;
+export const FORMAT_COMMAND_DEFAULT_MAX_LENGTH = 64;
+export const FORMAT_COMMAND_DEFAULT_ARG_MAX_LENGTH = 20;
 
 /**
- * Format an extracted command for display using the original raw source string.
+ * Format an extracted command for display.
  *
- * Slices the raw command string by the command's pos/end offsets so the
- * display reflects exactly what was typed. Newlines are replaced with ↵,
- * and the result is truncated to FORMAT_COMMAND_MAX_LENGTH characters.
+ * Re-serializes from AST tokens, preserving original quoting via argRanges.
+ * The command name is always shown verbatim. Each argument token is elided
+ * individually if needed:
+ *   - Path-like tokens (starting with /, ~/, ./, or ../) get path-aware
+ *     elision, keeping the first two path segments and the last
+ *     (e.g. /Users/jdiamond/code/pi-unbash → /Users/…/pi-unbash).
+ *   - Other tokens longer than argMaxLength are prefix-truncated: kept up to
+ *     argMaxLength chars then "…".
+ * If the total result still exceeds maxLength, it is hard-truncated with "…".
  */
-export function formatCommand(cmd: ExtractedCommand, raw: string): string {
-  let display = raw.slice(cmd.pos, cmd.end);
-  display = display.replace(/\n/g, "↵");
-  if (display.length > FORMAT_COMMAND_MAX_LENGTH) {
-    display = display.slice(0, FORMAT_COMMAND_MAX_LENGTH) + "…";
+export function formatCommand(
+  cmd: ExtractedCommand,
+  raw: string,
+  options?: { maxLength?: number; argMaxLength?: number },
+): string {
+  const maxLength = options?.maxLength ?? FORMAT_COMMAND_DEFAULT_MAX_LENGTH;
+  const argMaxLength = options?.argMaxLength ?? FORMAT_COMMAND_DEFAULT_ARG_MAX_LENGTH;
+
+  // Build token strings: name + each arg in its original form (quoting preserved).
+  const argTokens: string[] = cmd.argRanges
+    ? cmd.argRanges.map(r => raw.slice(r.pos, r.end))
+    : cmd.args;
+
+  // Command name is always shown verbatim; only args are elided.
+  const name = cmd.name.replace(/\n/g, "↵");
+  const args = argTokens
+    .map(t => t.replace(/\n/g, "↵"))
+    .map(t => elideToken(t, argMaxLength));
+
+  let display = [name, ...args].join(" ");
+
+  // Hard-truncate if total exceeds maxLength (edge case: many args).
+  if (display.length > maxLength) {
+    display = display.slice(0, maxLength - 1) + "…";
   }
+
   return display;
+}
+
+/** Elide a single argument token if warranted. */
+function elideToken(token: string, argMaxLength: number): string {
+  if (isPathToken(token)) {
+    const elided = elidePath(token);
+    return elided.length < token.length ? elided : token;
+  }
+  if (token.length > argMaxLength) {
+    return token.slice(0, argMaxLength) + "…";
+  }
+  return token;
+}
+
+/** A token is path-like if it starts with /, ~/, ./, or ../ */
+function isPathToken(token: string): boolean {
+  return token.startsWith("/") ||
+    token.startsWith("~/") ||
+    token.startsWith("./") ||
+    token.startsWith("../");
+}
+
+/**
+ * Path-aware elision: keep the first two segments and the last.
+ * /Users/jdiamond/code/pi-unbash → /Users/…/pi-unbash
+ */
+function elidePath(p: string): string {
+  const parts = p.split("/");
+  if (parts.length <= 3) return p;
+  return parts.slice(0, 2).join("/") + "/…/" + parts[parts.length - 1];
 }

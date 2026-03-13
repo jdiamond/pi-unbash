@@ -216,22 +216,46 @@ test("isCommandAllowed", async (t) => {
 
 test("formatCommand", async (t) => {
 
-  await t.test("shows exact raw slice of the command", () => {
-    assert.equal(formatCommand({ name: "git", args: ["commit"], pos: 0, end: 10 }, "git commit -am msg"), "git commit");
+  await t.test("re-serializes args as tokens", () => {
+    // Without argRanges, falls back to cmd.args values joined with spaces.
+    assert.equal(formatCommand({ name: "git", args: ["commit", "-am", "msg"] }, ""), "git commit -am msg");
   });
 
-  await t.test("truncates long commands with ellipsis", () => {
-    const raw = `python3 -c "print('this is a very long message indeed')"`;
-    assert.equal(formatCommand({ name: "python3", args: ["-c", "print('this is a very long message indeed')"], pos: 0, end: raw.length }, raw), "python3 -c \"print('this is a very long m…");
+  await t.test("preserves original quoting via argRanges", () => {
+    const raw = `git commit -m "my message"`;
+    const [cmd] = extractAllCommandsFromAST(parseBash(raw));
+    assert.equal(formatCommand(cmd!, raw), raw);
   });
 
-  await t.test("replaces newlines with ↵", () => {
-    const raw = "python3 -c \"print('hello\nworld')\"";
-    assert.equal(formatCommand({ name: "python3", args: ["-c", "print('hello\nworld')"], pos: 0, end: raw.length }, raw), "python3 -c \"print('hello↵world')\"");
+  await t.test("elides long paths individually, preserving surrounding tokens", () => {
+    const raw = "git -C /Users/jdiamond/code/pi-unbash add -A";
+    const [cmd] = extractAllCommandsFromAST(parseBash(raw));
+    assert.equal(formatCommand(cmd!, raw), "git -C /Users/…/pi-unbash add -A");
+  });
+
+  await t.test("prefix-truncates long non-path args, preserving command name and flags", () => {
+    const raw = `git commit -m "Add a very long commit message that exceeds the token max"`;
+    const [cmd] = extractAllCommandsFromAST(parseBash(raw));
+    const result = formatCommand(cmd!, raw, { argMaxLength: 10 });
+    assert.ok(result.startsWith("git commit -m"), `expected structural tokens in: ${result}`);
+    assert.ok(result.includes("…"), "should contain ellipsis");
+  });
+
+  await t.test("hard-truncates total display at maxLength", () => {
+    const cmd = { name: "echo", args: ["aa", "bb", "cc", "dd", "ee", "ff", "gg"] };
+    const result = formatCommand(cmd, "", { maxLength: 15 });
+    assert.ok(result.length <= 15, `expected length ≤ 15, got ${result.length}`);
+    assert.ok(result.endsWith("…"), "should end with ellipsis");
+  });
+
+  await t.test("replaces newlines with ↵ before elision", () => {
+    const result = formatCommand({ name: "python3", args: ["-c", "print('hello\nworld')"] }, "");
+    assert.ok(!result.includes("\n"), "should have no literal newlines");
+    assert.ok(result.includes("↵"), "should contain ↵");
   });
 
   await t.test("does not truncate short commands", () => {
-    assert.equal(formatCommand({ name: "pwd", args: [], pos: 0, end: 3 }, "pwd"), "pwd");
+    assert.equal(formatCommand({ name: "pwd", args: [] }, "pwd"), "pwd");
   });
 
 });

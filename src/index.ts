@@ -4,7 +4,7 @@ import { parse as parseBash } from "unbash";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
-import { extractAllCommandsFromAST, isCommandAllowed, formatCommand } from "./ast.ts";
+import { extractAllCommandsFromAST, isCommandAllowed, formatCommand, FORMAT_COMMAND_DEFAULT_MAX_LENGTH, FORMAT_COMMAND_DEFAULT_ARG_MAX_LENGTH } from "./ast.ts";
 import { DEFAULT_ALWAYS_ALLOWED } from "./defaults.ts";
 
 // 1. Define configuration storage using pi's native settings.json
@@ -14,6 +14,8 @@ const SETTINGS_PATH = path.join(AGENT_DIR, "settings.json");
 interface UnbashConfig {
   enabled: boolean;
   alwaysAllowed: string[];
+  commandDisplayMaxLength: number;
+  commandDisplayArgMaxLength: number;
 }
 
 interface LoadedConfigResult {
@@ -24,11 +26,15 @@ interface LoadedConfigResult {
 const DEFAULT_CONFIG: UnbashConfig = {
   enabled: true,
   alwaysAllowed: DEFAULT_ALWAYS_ALLOWED,
+  commandDisplayMaxLength: FORMAT_COMMAND_DEFAULT_MAX_LENGTH,
+  commandDisplayArgMaxLength: FORMAT_COMMAND_DEFAULT_ARG_MAX_LENGTH,
 };
 
 const SAFE_FALLBACK_CONFIG: UnbashConfig = {
   enabled: true,
   alwaysAllowed: [],
+  commandDisplayMaxLength: FORMAT_COMMAND_DEFAULT_MAX_LENGTH,
+  commandDisplayArgMaxLength: FORMAT_COMMAND_DEFAULT_ARG_MAX_LENGTH,
 };
 
 export function validateLoadedUnbashConfig(input: unknown): LoadedConfigResult {
@@ -65,14 +71,28 @@ export function validateLoadedUnbashConfig(input: unknown): LoadedConfigResult {
     warnings.push("alwaysAllowed must be a string[]");
   }
 
+  let commandDisplayMaxLength = SAFE_FALLBACK_CONFIG.commandDisplayMaxLength;
+  if (typeof cfg.commandDisplayMaxLength === "number" && cfg.commandDisplayMaxLength > 0) {
+    commandDisplayMaxLength = cfg.commandDisplayMaxLength;
+  } else if (cfg.commandDisplayMaxLength !== undefined) {
+    warnings.push("commandDisplayMaxLength must be a positive number");
+  }
+
+  let commandDisplayArgMaxLength = SAFE_FALLBACK_CONFIG.commandDisplayArgMaxLength;
+  if (typeof cfg.commandDisplayArgMaxLength === "number" && cfg.commandDisplayArgMaxLength > 0) {
+    commandDisplayArgMaxLength = cfg.commandDisplayArgMaxLength;
+  } else if (cfg.commandDisplayArgMaxLength !== undefined) {
+    warnings.push("commandDisplayArgMaxLength must be a positive number");
+  }
+
   if (warnings.length > 0) {
     return {
-      config: { enabled, alwaysAllowed },
+      config: { enabled, alwaysAllowed, commandDisplayMaxLength, commandDisplayArgMaxLength },
       warning: `Invalid unbash config fields (${warnings.join("; ")}); using safe values for invalid fields.`,
     };
   }
 
-  return { config: { enabled, alwaysAllowed } };
+  return { config: { enabled, alwaysAllowed, commandDisplayMaxLength, commandDisplayArgMaxLength } };
 }
 
 function loadConfig(): LoadedConfigResult {
@@ -246,12 +266,12 @@ export default function (pi: ExtensionAPI) {
     if (!ctx.hasUI) {
       return { 
         block: true, 
-        reason: `Commands [${unauthorizedCommands.map(c => formatCommand(c, rawCmd)).join(", ")}] require UI confirmation.` 
+        reason: `Commands [${unauthorizedCommands.map(c => formatCommand(c, rawCmd, { maxLength: config.commandDisplayMaxLength, argMaxLength: config.commandDisplayArgMaxLength })).join(", ")}] require UI confirmation.` 
       };
     }
 
     // Deduplicate for display
-    const uniqueUnauthorized = Array.from(new Set(unauthorizedCommands.map(c => formatCommand(c, rawCmd))));
+    const uniqueUnauthorized = Array.from(new Set(unauthorizedCommands.map(c => formatCommand(c, rawCmd, { maxLength: config.commandDisplayMaxLength, argMaxLength: config.commandDisplayArgMaxLength }))));
     const uniqueBaseNames = Array.from(new Set(unauthorizedCommands.map(c => c.name)));
     const alwaysLabel = `Always allow ${uniqueBaseNames.join(", ")} (this session)`;
 

@@ -100,6 +100,27 @@ Matching uses **subsequence logic** — the tokens in your allowlist entry must 
 | `git branch --show-current` | `git branch --show-current`, `git branch -v --show-current` | `git branch -D main` |
 | `jira issue view` | `jira issue view PROJ-123`, `jira issue view --verbose PROJ-123` | `jira issue create` |
 
+### Display Settings
+
+The confirmation prompt elides long command arguments to keep the display readable:
+
+- **Path arguments** (starting with `/`, `~/`, `./`, or `../`) get path-aware elision, keeping the first two path segments and the last (e.g. `/Users/jdiamond/code/pi-unbash` → `/Users/…/pi-unbash`).
+- **Other long arguments** are prefix-truncated at `commandDisplayArgMaxLength` chars with `…`.
+- **The command name** is always shown in full.
+- If the total display exceeds `commandDisplayMaxLength`, the whole string is hard-truncated.
+
+```json
+{
+  "unbash": {
+    "commandDisplayMaxLength": 64,
+    "commandDisplayArgMaxLength": 20
+  }
+}
+```
+
+- **`commandDisplayMaxLength`** — total character budget for the display string (default: `64`).
+- **`commandDisplayArgMaxLength`** — max chars shown per non-path argument before prefix-truncating (default: `20`).
+
 ### Commands
 
 You can manage settings dynamically mid-session using the `/unbash` command:
