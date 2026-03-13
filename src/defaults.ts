@@ -1,6 +1,6 @@
 export const DEFAULT_ALWAYS_ALLOWED: string[] = [
   // Basic read-only utilities
-  "cat", "cd", "echo", "find", "grep", "head", "ls", "pwd", "rg", "tail", "true", "wc",
+  "cat", "cd", "echo", "find", "grep", "head", "ls", "pwd", "rg", "sort", "tail", "true", "uniq", "wc",
   // Path utilities
   "basename", "dirname", "realpath",
   // System info
