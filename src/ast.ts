@@ -175,8 +175,8 @@ function isSubsequence(needle: string[], haystack: string[]): boolean {
   return ni === needle.length;
 }
 
-export const FORMAT_COMMAND_DEFAULT_MAX_LENGTH = 64;
-export const FORMAT_COMMAND_DEFAULT_ARG_MAX_LENGTH = 20;
+export const FORMAT_COMMAND_DEFAULT_MAX_LENGTH = 120;
+export const FORMAT_COMMAND_DEFAULT_ARG_MAX_LENGTH = 40;
 
 /**
  * Format an extracted command for display.

@@ -112,14 +112,14 @@ The confirmation prompt elides long command arguments to keep the display readab
 ```json
 {
   "unbash": {
-    "commandDisplayMaxLength": 64,
-    "commandDisplayArgMaxLength": 20
+    "commandDisplayMaxLength": 120,
+    "commandDisplayArgMaxLength": 40
   }
 }
 ```
 
-- **`commandDisplayMaxLength`** — total character budget for the display string (default: `64`).
-- **`commandDisplayArgMaxLength`** — max chars shown per non-path argument before prefix-truncating (default: `20`).
+- **`commandDisplayMaxLength`** — total character budget for the display string (default: `120`).
+- **`commandDisplayArgMaxLength`** — max chars shown per non-path argument before prefix-truncating (default: `40`).
 
 ### Commands
 

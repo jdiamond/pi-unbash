@@ -4,13 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- Increased default `commandDisplayMaxLength` from `64` to `120` and `commandDisplayArgMaxLength` from `20` to `40` for better readability on modern wide terminals.
+
 ## [1.2.0] - 2026-03-12
 
 ### Added
 - Session-scoped approval: confirmation prompt now offers "Always allow X (this session)" to allow a base command for the duration of the session without persisting to `settings.json`.
 - `/unbash list` now shows session-allowed commands alongside permanently allowed commands.
 - Smart command display: the command name is always shown verbatim. Path arguments (starting with `/`, `~/`, `./`, or `../`) get path-aware elision (e.g. `/Users/jdiamond/code/pi-unbash` → `/Users/…/pi-unbash`). Other long arguments are prefix-truncated at `commandDisplayArgMaxLength` chars with `…`. If the total display exceeds `commandDisplayMaxLength`, the whole string is hard-truncated. Original quoting is preserved and whitespace is normalized via per-argument source positions from the AST.
-- `commandDisplayMaxLength` and `commandDisplayArgMaxLength` settings in `settings.json` control the total display budget and per-argument truncation length (defaults: `64` and `20`).
+- `commandDisplayMaxLength` and `commandDisplayArgMaxLength` settings in `settings.json` control the total display budget and per-argument truncation length (defaults: `120` and `40`).
 - Added `sort` and `uniq` to the default allowed commands.
 
 ### Changed
