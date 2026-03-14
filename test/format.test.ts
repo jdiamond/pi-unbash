@@ -26,22 +26,16 @@ test("formatCommand", async (t) => {
   await t.test("prefix-truncates long non-path args, preserving command name and flags", () => {
     const raw = `git commit -m "Add a very long commit message that exceeds the token max"`;
     const [cmd] = extractAllCommandsFromAST(parseBash(raw));
-    const result = formatCommand(cmd!, raw, { maxLength: 50, argMaxLength: 10 });
-    assert.ok(result.startsWith("git commit -m"), `expected structural tokens in: ${result}`);
-    assert.ok(result.includes("…"), "should contain ellipsis");
+    assert.equal(formatCommand(cmd!, raw, { maxLength: 50, argMaxLength: 10 }), `git commit -m "Add a ver…`);
   });
 
   await t.test("hard-truncates total display at maxLength", () => {
     const cmd = { name: "echo", args: ["aa", "bb", "cc", "dd", "ee", "ff", "gg"] };
-    const result = formatCommand(cmd, "", { maxLength: 15 });
-    assert.ok(result.length <= 15, `expected length ≤ 15, got ${result.length}`);
-    assert.ok(result.endsWith("…"), "should end with ellipsis");
+    assert.equal(formatCommand(cmd, "", { maxLength: 15 }), "echo aa bb cc …");
   });
 
   await t.test("replaces newlines with ↵ before elision", () => {
-    const result = formatCommand({ name: "python3", args: ["-c", "print('hello\nworld')"] }, "");
-    assert.ok(!result.includes("\n"), "should have no literal newlines");
-    assert.ok(result.includes("↵"), "should contain ↵");
+    assert.equal(formatCommand({ name: "python3", args: ["-c", "print('hello\nworld')"] }, ""), "python3 -c print('hello↵world')");
   });
 
   await t.test("correctly resolves argRanges for commands inside $()", () => {
@@ -61,23 +55,19 @@ test("formatCommand", async (t) => {
   await t.test("elides quoted paths containing $", () => {
     const raw = `cp "$PROJECT_ROOT/src/routes/\\$page.tsx" dist/`;
     const [cmd] = extractAllCommandsFromAST(parseBash(raw));
-    const result = formatCommand(cmd!, raw, { maxLength: 40 });
-    assert.ok(result.includes("…"), `expected elision in: ${result}`);
-    assert.ok(!result.includes("routes"), `expected middle segment elided in: ${result}`);
+    assert.equal(formatCommand(cmd!, raw, { maxLength: 40 }), `cp "$PROJECT_ROOT/src/…/\\$page.tsx" dis…`);
   });
 
   await t.test("does not treat URLs as paths", () => {
     const raw = `curl https://github.com/owner/repo/blob/main/README.md`;
     const [cmd] = extractAllCommandsFromAST(parseBash(raw));
-    const result = formatCommand(cmd!, raw, { argMaxLength: 20 });
-    assert.ok(!result.includes("/…/"), `expected no path elision for URL in: ${result}`);
+    assert.equal(formatCommand(cmd!, raw, { argMaxLength: 20 }), "curl https://github.com/owner/repo/blob/main/README.md");
   });
 
   await t.test("does not treat sentences with a slash as paths", () => {
     const raw = `echo "enable foo/bar and baz qux quux corge"`;
     const [cmd] = extractAllCommandsFromAST(parseBash(raw));
-    const result = formatCommand(cmd!, raw);
-    assert.ok(!result.includes("/…/"), `expected no path elision for sentence in: ${result}`);
+    assert.equal(formatCommand(cmd!, raw), `echo "enable foo/bar and baz qux quux corge"`);
   });
 
   await t.test("includes heredoc content in display with operator and marker preserved", () => {
