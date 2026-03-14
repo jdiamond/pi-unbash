@@ -4,7 +4,8 @@ import { parse as parseBash } from "unbash";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
-import { extractAllCommandsFromAST, isCommandAllowed, formatCommand, FORMAT_COMMAND_DEFAULT_MAX_LENGTH, FORMAT_COMMAND_DEFAULT_ARG_MAX_LENGTH } from "./ast.ts";
+import { extractAllCommandsFromAST, isCommandAllowed } from "./extract.ts";
+import { formatCommand, FORMAT_COMMAND_DEFAULT_MAX_LENGTH, FORMAT_COMMAND_DEFAULT_ARG_MAX_LENGTH } from "./format.ts";
 import { DEFAULT_ALWAYS_ALLOWED } from "./defaults.ts";
 
 // 1. Define configuration storage using pi's native settings.json

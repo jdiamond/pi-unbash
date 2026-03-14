@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { validateLoadedUnbashConfig } from "../src/index.ts";
-import { FORMAT_COMMAND_DEFAULT_MAX_LENGTH, FORMAT_COMMAND_DEFAULT_ARG_MAX_LENGTH } from "../src/ast.ts";
+import { FORMAT_COMMAND_DEFAULT_MAX_LENGTH, FORMAT_COMMAND_DEFAULT_ARG_MAX_LENGTH } from "../src/format.ts";
 
 const displayDefaults = {
   commandDisplayMaxLength: FORMAT_COMMAND_DEFAULT_MAX_LENGTH,
