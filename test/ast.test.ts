@@ -312,4 +312,34 @@ test("formatCommand", async (t) => {
     assert.equal(formatCommand({ name: "pwd", args: [] }, "pwd"), "pwd");
   });
 
+  await t.test("includes 2>&1 redirect in display", () => {
+    const raw = `git rebase -i main --autosquash 2>&1 <<'EOF'\npick abc feat\nEOF`;
+    const [cmd] = extractAllCommandsFromAST(parseBash(raw));
+    assert.equal(formatCommand(cmd!, raw), `git rebase -i main --autosquash 2>&1 <<'EOF'↵pick abc feat↵EOF`);
+  });
+
+  await t.test("includes output redirect in display", () => {
+    const raw = `echo hello >out.txt`;
+    const [cmd] = extractAllCommandsFromAST(parseBash(raw));
+    assert.equal(formatCommand(cmd!, raw), "echo hello >out.txt");
+  });
+
+  await t.test("includes input redirect in display", () => {
+    const raw = `cat <in.txt`;
+    const [cmd] = extractAllCommandsFromAST(parseBash(raw));
+    assert.equal(formatCommand(cmd!, raw), "cat <in.txt");
+  });
+
+  await t.test("includes stderr redirect in display", () => {
+    const raw = `cmd 2>/dev/null`;
+    const [cmd] = extractAllCommandsFromAST(parseBash(raw));
+    assert.equal(formatCommand(cmd!, raw), "cmd 2>/dev/null");
+  });
+
+  await t.test("renders non-heredoc redirects before heredoc in display", () => {
+    const raw = `cmd >out.txt <<EOF\nhello\nEOF`;
+    const [cmd] = extractAllCommandsFromAST(parseBash(raw));
+    assert.equal(formatCommand(cmd!, raw), "cmd >out.txt <<EOF↵hello↵EOF");
+  });
+
 });

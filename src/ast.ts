@@ -6,6 +6,8 @@ export interface ExtractedCommand {
   argRanges?: Array<{ pos: number; end: number }>;
   /** Heredoc redirects attached to this command, for display. */
   heredocs?: Array<{ operator: string; marker: string; quoted: boolean; content: string }>;
+  /** Non-heredoc redirects attached to this command, for display (e.g. 2>&1, >out.txt). */
+  otherRedirects?: Array<{ text: string }>;
   pos?: number;
   end?: number;
 }
@@ -30,6 +32,7 @@ export function extractAllCommandsFromAST(node: unknown, offset: number = 0): Ex
           .map(s => ({ pos: (s.pos as number) + offset, end: (s.end as number) + offset }));
         const redirects = n["redirects"] as Array<{
           operator?: string;
+          fileDescriptor?: number;
           target?: { text?: string };
           heredocQuoted?: boolean;
           content?: string;
@@ -42,11 +45,17 @@ export function extractAllCommandsFromAST(node: unknown, offset: number = 0): Ex
             quoted: r.heredocQuoted === true,
             content: r.content!,
           }));
+        const otherRedirects = redirects
+          ?.filter(r => !((r.operator === "<<" || r.operator === "<<-") && r.content != null))
+          .map(r => ({
+            text: `${r.fileDescriptor != null ? r.fileDescriptor : ""}${r.operator ?? ""}${r.target?.text ?? ""}`,
+          }));
         commands.push({
           name: name.text,
           args,
           ...(argRanges?.length === args.length ? { argRanges } : {}),
           ...(heredocs?.length ? { heredocs } : {}),
+          ...(otherRedirects?.length ? { otherRedirects } : {}),
           pos: (n["pos"] as number ?? 0) + offset,
           end: (n["end"] as number ?? 0) + offset,
         });
@@ -265,7 +274,11 @@ export function formatCommand(
     return prefix + content.slice(0, argMaxLength) + "…";
   }) ?? [];
 
-  let display = [name, ...args, ...heredocParts].join(" ");
+  const otherRedirectParts = cmd.otherRedirects?.map(r =>
+    elideToken(r.text.replace(/\n/g, "↵"), argMaxLength)
+  ) ?? [];
+
+  let display = [name, ...args, ...otherRedirectParts, ...heredocParts].join(" ");
 
   // Hard-truncate if total exceeds maxLength (edge case: many args).
   if (display.length > maxLength) {
