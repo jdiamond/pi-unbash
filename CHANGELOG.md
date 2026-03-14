@@ -4,8 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- Fixed display corruption for commands inside `$()` substitutions.
+
 ### Changed
 - Increased default `commandDisplayMaxLength` from `64` to `120` and `commandDisplayArgMaxLength` from `20` to `40` for better readability on modern wide terminals.
+- Replaced prefix-based path detection with a character-composition heuristic that correctly elides bare relative paths (e.g. `packages/tui/src/terminal.ts`) and quoted paths containing `$` while leaving URLs and prose untouched.
 
 ## [1.2.0] - 2026-03-12
 

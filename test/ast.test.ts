@@ -254,6 +254,42 @@ test("formatCommand", async (t) => {
     assert.ok(result.includes("↵"), "should contain ↵");
   });
 
+  await t.test("correctly resolves argRanges for commands inside $()", () => {
+    const raw = `git reset --soft $(git merge-base main HEAD)`;
+    const cmds = extractAllCommandsFromAST(parseBash(raw));
+    const inner = cmds.find(c => c.name === "git" && c.args[0] === "merge-base");
+    assert.ok(inner, "should extract inner git command");
+    assert.equal(formatCommand(inner!, raw), "git merge-base main HEAD");
+  });
+
+  await t.test("elides bare relative paths (no leading ./ or /)", () => {
+    const raw = "git add packages/tui/src/terminal.ts";
+    const [cmd] = extractAllCommandsFromAST(parseBash(raw));
+    assert.equal(formatCommand(cmd!, raw), "git add packages/tui/…/terminal.ts");
+  });
+
+  await t.test("elides quoted paths containing $", () => {
+    const raw = `cp "$PROJECT_ROOT/src/routes/\\$page.tsx" dist/`;
+    const [cmd] = extractAllCommandsFromAST(parseBash(raw));
+    const result = formatCommand(cmd!, raw);
+    assert.ok(result.includes("…"), `expected elision in: ${result}`);
+    assert.ok(!result.includes("routes"), `expected middle segment elided in: ${result}`);
+  });
+
+  await t.test("does not treat URLs as paths", () => {
+    const raw = `curl https://github.com/owner/repo/blob/main/README.md`;
+    const [cmd] = extractAllCommandsFromAST(parseBash(raw));
+    const result = formatCommand(cmd!, raw, { argMaxLength: 20 });
+    assert.ok(!result.includes("/…/"), `expected no path elision for URL in: ${result}`);
+  });
+
+  await t.test("does not treat sentences with a slash as paths", () => {
+    const raw = `echo "enable foo/bar and baz qux quux corge"`;
+    const [cmd] = extractAllCommandsFromAST(parseBash(raw));
+    const result = formatCommand(cmd!, raw);
+    assert.ok(!result.includes("/…/"), `expected no path elision for sentence in: ${result}`);
+  });
+
   await t.test("does not truncate short commands", () => {
     assert.equal(formatCommand({ name: "pwd", args: [] }, "pwd"), "pwd");
   });
