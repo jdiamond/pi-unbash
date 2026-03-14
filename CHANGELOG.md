@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 - Fixed display corruption for commands inside `$()` substitutions.
 - Non-heredoc redirects (`2>&1`, `>out.txt`, `<in.txt`, `2>/dev/null`, etc.) are now included in the approval prompt display. Previously they were silently omitted, as seen with commands like `git rebase -i main --autosquash 2>&1 <<EOF`.
+- Fixed `settings.json` loading so a present-but-falsey `unbash` value is validated as invalid config and falls back safely, instead of silently reverting to the permissive default allowlist.
 
 ### Changed
 - Increased default `commandDisplayMaxLength` from `64` to `120` and `commandDisplayArgMaxLength` from `20` to `40` for better readability on modern wide terminals.

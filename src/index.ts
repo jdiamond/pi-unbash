@@ -96,15 +96,27 @@ export function validateLoadedUnbashConfig(input: unknown): LoadedConfigResult {
   return { config: { enabled, alwaysAllowed, commandDisplayMaxLength, commandDisplayArgMaxLength } };
 }
 
+export function getUnbashConfigFromSettings(input: unknown): LoadedConfigResult {
+  if (!input || typeof input !== "object") {
+    return { config: DEFAULT_CONFIG };
+  }
+
+  const settings = input as Record<string, unknown>;
+
+  // Fallback to defaults if the "unbash" key doesn't exist yet.
+  if (!Object.hasOwn(settings, "unbash")) {
+    return { config: DEFAULT_CONFIG };
+  }
+
+  return validateLoadedUnbashConfig(settings.unbash);
+}
+
 function loadConfig(): LoadedConfigResult {
   if (fs.existsSync(SETTINGS_PATH)) {
     try {
       const data = fs.readFileSync(SETTINGS_PATH, "utf-8");
       const parsed = JSON.parse(data);
-      // Fallback to defaults if the "unbash" key doesn't exist yet
-      if (parsed.unbash) {
-        return validateLoadedUnbashConfig(parsed.unbash);
-      }
+      return getUnbashConfigFromSettings(parsed);
     } catch (e) {
       return {
         config: { ...SAFE_FALLBACK_CONFIG },

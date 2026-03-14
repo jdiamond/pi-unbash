@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { validateLoadedUnbashConfig } from "../src/index.ts";
+import { getUnbashConfigFromSettings, validateLoadedUnbashConfig } from "../src/index.ts";
 import { FORMAT_COMMAND_DEFAULT_MAX_LENGTH, FORMAT_COMMAND_DEFAULT_ARG_MAX_LENGTH } from "../src/format.ts";
+import { DEFAULT_ALWAYS_ALLOWED } from "../src/defaults.ts";
 
 const displayDefaults = {
   commandDisplayMaxLength: FORMAT_COMMAND_DEFAULT_MAX_LENGTH,
@@ -52,6 +53,20 @@ test("validateLoadedUnbashConfig", async (t) => {
     const result = validateLoadedUnbashConfig({ enabled: true, alwaysAllowed: [], commandDisplayMaxLength: "big", commandDisplayArgMaxLength: -1 });
     assert.equal(result.config.commandDisplayMaxLength, FORMAT_COMMAND_DEFAULT_MAX_LENGTH);
     assert.equal(result.config.commandDisplayArgMaxLength, FORMAT_COMMAND_DEFAULT_ARG_MAX_LENGTH);
+    assert.ok(result.warning);
+  });
+});
+
+test("getUnbashConfigFromSettings", async (t) => {
+  await t.test("uses defaults when the unbash key is missing", () => {
+    const result = getUnbashConfigFromSettings({ other: true });
+    assert.deepEqual(result.config, { enabled: true, alwaysAllowed: DEFAULT_ALWAYS_ALLOWED, ...displayDefaults });
+    assert.equal(result.warning, undefined);
+  });
+
+  await t.test("validates a falsey unbash value instead of falling back to defaults", () => {
+    const result = getUnbashConfigFromSettings({ unbash: null });
+    assert.deepEqual(result.config, { enabled: true, alwaysAllowed: [], ...displayDefaults });
     assert.ok(result.warning);
   });
 });
