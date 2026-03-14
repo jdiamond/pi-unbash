@@ -31,9 +31,18 @@ export function formatCommand(
 
   // Command name is always shown verbatim; only args are elided.
   const name = cmd.name.replace(/\n/g, "↵");
-  const args = argTokens
-    .map(t => t.replace(/\n/g, "↵"))
-    .map(t => elideToken(t, argMaxLength));
+  const rawArgs = argTokens.map(t => t.replace(/\n/g, "↵"));
+
+  // If the full command fits within maxLength, skip elision entirely.
+  const rawHeredocParts = cmd.heredocs?.map(h => {
+    const q = h.quoted ? "'" : "";
+    return `${h.operator}${q}${h.marker}${q}↵` + h.content.replace(/\n/g, "↵") + h.marker;
+  }) ?? [];
+  const rawRedirectParts = cmd.otherRedirects?.map(r => r.text.replace(/\n/g, "↵")) ?? [];
+  const fullDisplay = [name, ...rawArgs, ...rawRedirectParts, ...rawHeredocParts].join(" ");
+  if (fullDisplay.length <= maxLength) return fullDisplay;
+
+  const args = rawArgs.map(t => elideToken(t, argMaxLength));
 
   const heredocParts = cmd.heredocs?.map(h => {
     const q = h.quoted ? "'" : "";

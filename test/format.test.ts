@@ -20,13 +20,13 @@ test("formatCommand", async (t) => {
   await t.test("elides long paths individually, preserving surrounding tokens", () => {
     const raw = "git -C /Users/jdiamond/code/pi-unbash add -A";
     const [cmd] = extractAllCommandsFromAST(parseBash(raw));
-    assert.equal(formatCommand(cmd!, raw), "git -C /Users/…/pi-unbash add -A");
+    assert.equal(formatCommand(cmd!, raw, { maxLength: 40 }), "git -C /Users/…/pi-unbash add -A");
   });
 
   await t.test("prefix-truncates long non-path args, preserving command name and flags", () => {
     const raw = `git commit -m "Add a very long commit message that exceeds the token max"`;
     const [cmd] = extractAllCommandsFromAST(parseBash(raw));
-    const result = formatCommand(cmd!, raw, { argMaxLength: 10 });
+    const result = formatCommand(cmd!, raw, { maxLength: 50, argMaxLength: 10 });
     assert.ok(result.startsWith("git commit -m"), `expected structural tokens in: ${result}`);
     assert.ok(result.includes("…"), "should contain ellipsis");
   });
@@ -55,13 +55,13 @@ test("formatCommand", async (t) => {
   await t.test("elides bare relative paths (no leading ./ or /)", () => {
     const raw = "git add packages/tui/src/terminal.ts";
     const [cmd] = extractAllCommandsFromAST(parseBash(raw));
-    assert.equal(formatCommand(cmd!, raw), "git add packages/tui/…/terminal.ts");
+    assert.equal(formatCommand(cmd!, raw, { maxLength: 35 }), "git add packages/tui/…/terminal.ts");
   });
 
   await t.test("elides quoted paths containing $", () => {
     const raw = `cp "$PROJECT_ROOT/src/routes/\\$page.tsx" dist/`;
     const [cmd] = extractAllCommandsFromAST(parseBash(raw));
-    const result = formatCommand(cmd!, raw);
+    const result = formatCommand(cmd!, raw, { maxLength: 40 });
     assert.ok(result.includes("…"), `expected elision in: ${result}`);
     assert.ok(!result.includes("routes"), `expected middle segment elided in: ${result}`);
   });
@@ -89,13 +89,19 @@ test("formatCommand", async (t) => {
   await t.test("elides long heredoc content at argMaxLength", () => {
     const raw = `bash <<EOF\n${"x".repeat(100)}\nEOF`;
     const [cmd] = extractAllCommandsFromAST(parseBash(raw));
-    assert.equal(formatCommand(cmd!, raw, { argMaxLength: 20 }), `bash <<EOF↵${"x".repeat(20)}…`);
+    assert.equal(formatCommand(cmd!, raw, { maxLength: 50, argMaxLength: 20 }), `bash <<EOF↵${"x".repeat(20)}…`);
   });
 
   await t.test("preserves <<- operator in heredoc display", () => {
     const raw = `bash <<-EOF\n\techo hi\nEOF`;
     const [cmd] = extractAllCommandsFromAST(parseBash(raw));
     assert.equal(formatCommand(cmd!, raw), `bash <<-EOF↵\techo hi↵EOF`);
+  });
+
+  await t.test("does not elide paths that fit within maxLength", () => {
+    const raw = "rm /Users/jdiamond/code/pi-unbash/test/ast.test.ts";
+    const [cmd] = extractAllCommandsFromAST(parseBash(raw));
+    assert.equal(formatCommand(cmd!, raw), raw);
   });
 
   await t.test("does not truncate short commands", () => {
