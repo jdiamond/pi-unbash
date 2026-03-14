@@ -290,6 +290,24 @@ test("formatCommand", async (t) => {
     assert.ok(!result.includes("/…/"), `expected no path elision for sentence in: ${result}`);
   });
 
+  await t.test("includes heredoc content in display with operator and marker preserved", () => {
+    const raw = `node --input-type=module <<'EOF'\nconsole.log("hi");\nEOF`;
+    const [cmd] = extractAllCommandsFromAST(parseBash(raw));
+    assert.equal(formatCommand(cmd!, raw), `node --input-type=module <<'EOF'↵console.log("hi");↵EOF`);
+  });
+
+  await t.test("elides long heredoc content at argMaxLength", () => {
+    const raw = `bash <<EOF\n${"x".repeat(100)}\nEOF`;
+    const [cmd] = extractAllCommandsFromAST(parseBash(raw));
+    assert.equal(formatCommand(cmd!, raw, { argMaxLength: 20 }), `bash <<EOF↵${"x".repeat(20)}…`);
+  });
+
+  await t.test("preserves <<- operator in heredoc display", () => {
+    const raw = `bash <<-EOF\n\techo hi\nEOF`;
+    const [cmd] = extractAllCommandsFromAST(parseBash(raw));
+    assert.equal(formatCommand(cmd!, raw), `bash <<-EOF↵\techo hi↵EOF`);
+  });
+
   await t.test("does not truncate short commands", () => {
     assert.equal(formatCommand({ name: "pwd", args: [] }, "pwd"), "pwd");
   });

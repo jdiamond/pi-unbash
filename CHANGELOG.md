@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- Heredoc content is now shown inline in the approval prompt (e.g. `bash <<EOF↵echo hi↵EOF`), with newlines replaced by `↵`, content elided at `commandDisplayArgMaxLength` if too long, and the closing marker shown when it fits.
+
 ### Fixed
 - Fixed display corruption for commands inside `$()` substitutions.
 

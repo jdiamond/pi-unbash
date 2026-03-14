@@ -4,6 +4,8 @@ export interface ExtractedCommand {
   args: string[];
   /** Source positions of each argument token, for display with original quoting. */
   argRanges?: Array<{ pos: number; end: number }>;
+  /** Heredoc redirects attached to this command, for display. */
+  heredocs?: Array<{ operator: string; marker: string; quoted: boolean; content: string }>;
   pos?: number;
   end?: number;
 }
@@ -26,10 +28,25 @@ export function extractAllCommandsFromAST(node: unknown, offset: number = 0): Ex
         const argRanges = suffix
           ?.filter(s => s.pos != null && s.end != null)
           .map(s => ({ pos: (s.pos as number) + offset, end: (s.end as number) + offset }));
+        const redirects = n["redirects"] as Array<{
+          operator?: string;
+          target?: { text?: string };
+          heredocQuoted?: boolean;
+          content?: string;
+        }> | undefined;
+        const heredocs = redirects
+          ?.filter(r => (r.operator === "<<" || r.operator === "<<-") && r.content != null)
+          .map(r => ({
+            operator: r.operator!,
+            marker: r.target?.text ?? "",
+            quoted: r.heredocQuoted === true,
+            content: r.content!,
+          }));
         commands.push({
           name: name.text,
           args,
           ...(argRanges?.length === args.length ? { argRanges } : {}),
+          ...(heredocs?.length ? { heredocs } : {}),
           pos: (n["pos"] as number ?? 0) + offset,
           end: (n["end"] as number ?? 0) + offset,
         });
@@ -237,7 +254,18 @@ export function formatCommand(
     .map(t => t.replace(/\n/g, "↵"))
     .map(t => elideToken(t, argMaxLength));
 
-  let display = [name, ...args].join(" ");
+  const heredocParts = cmd.heredocs?.map(h => {
+    const q = h.quoted ? "'" : "";
+    const prefix = `${h.operator}${q}${h.marker}${q}↵`;
+    const content = h.content.replace(/\n/g, "↵");
+    const full = content + h.marker;
+    if (full.length <= argMaxLength) {
+      return prefix + full;
+    }
+    return prefix + content.slice(0, argMaxLength) + "…";
+  }) ?? [];
+
+  let display = [name, ...args, ...heredocParts].join(" ");
 
   // Hard-truncate if total exceeds maxLength (edge case: many args).
   if (display.length > maxLength) {
