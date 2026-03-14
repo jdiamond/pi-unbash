@@ -1,181 +1,293 @@
-import type { ExtractedCommand } from "./types.ts";
+import type {
+  ArithmeticExpression,
+  AssignmentPrefix,
+  Command,
+  CommandExpansionPart,
+  Node,
+  ParameterExpansionPart,
+  ProcessSubstitutionPart,
+  Redirect,
+  Script,
+  TestExpression,
+  Word,
+  WordPart,
+} from "unbash";
+import type { CommandRef } from "./types.ts";
 
-export type { ExtractedCommand };
+export type { CommandRef };
 
-export function extractAllCommandsFromAST(node: unknown, offset: number = 0): ExtractedCommand[] {
-  if (!node || typeof node !== "object") return [];
+export function extractAllCommandsFromAST(node: Script | Node, source: string): CommandRef[] {
+  const commands: CommandRef[] = [];
+  collectNode(node, source, commands);
+  return commands;
+}
 
-  const n = node as Record<string, unknown>;
-  const commands: ExtractedCommand[] = [];
+function collectNode(node: Script | Node | undefined, source: string, commands: CommandRef[]) {
+  if (!node) return;
 
-  const type = n["type"] as string | undefined;
-
-  switch (type) {
-    // Leaf: a concrete command
-    case "Command": {
-      const name = n["name"] as { text?: string } | undefined;
-      if (name?.text) {
-        const suffix = n["suffix"] as Array<{ text?: string; value?: string; pos?: number; end?: number }> | undefined;
-        const args = suffix?.map(s => s.value ?? s.text ?? "") ?? [];
-        const argRanges = suffix
-          ?.filter(s => s.pos != null && s.end != null)
-          .map(s => ({ pos: (s.pos as number) + offset, end: (s.end as number) + offset }));
-        const redirects = n["redirects"] as Array<{
-          operator?: string;
-          fileDescriptor?: number;
-          target?: { text?: string };
-          heredocQuoted?: boolean;
-          content?: string;
-        }> | undefined;
-        const heredocs = redirects
-          ?.filter(r => (r.operator === "<<" || r.operator === "<<-") && r.content != null)
-          .map(r => ({
-            operator: r.operator!,
-            marker: r.target?.text ?? "",
-            quoted: r.heredocQuoted === true,
-            content: r.content!,
-          }));
-        const otherRedirects = redirects
-          ?.filter(r => !((r.operator === "<<" || r.operator === "<<-") && r.content != null))
-          .map(r => ({
-            text: `${r.fileDescriptor != null ? r.fileDescriptor : ""}${r.operator ?? ""}${r.target?.text ?? ""}`,
-          }));
-        commands.push({
-          name: name.text,
-          args,
-          ...(argRanges?.length === args.length ? { argRanges } : {}),
-          ...(heredocs?.length ? { heredocs } : {}),
-          ...(otherRedirects?.length ? { otherRedirects } : {}),
-          pos: (n["pos"] as number ?? 0) + offset,
-          end: (n["end"] as number ?? 0) + offset,
-        });
-      }
-      walkArray(n["prefix"] as unknown[], commands, offset);
-      walkArray(n["suffix"] as unknown[], commands, offset);
-      break;
-    }
-
-    // Containers with a `commands` array
+  switch (node.type) {
     case "Script":
     case "AndOr":
     case "Pipeline":
     case "CompoundList":
-      walkArray(n["commands"] as unknown[], commands, offset);
-      break;
+      for (const child of node.commands) {
+        collectNode(child, source, commands);
+      }
+      return;
 
-    // Statement wrapper
     case "Statement":
-      commands.push(...extractAllCommandsFromAST(n["command"], offset));
-      break;
+      collectNode(node.command, source, commands);
+      for (const redirect of node.redirects) {
+        collectRedirect(redirect, source, commands);
+      }
+      return;
 
-    // Subshell: (cmd1; cmd2)
+    case "Command":
+      collectCommand(node, source, commands);
+      return;
+
     case "Subshell":
-      commands.push(...extractAllCommandsFromAST(n["body"], offset));
-      break;
-
-    // Brace group: { cmd1; cmd2; }
     case "BraceGroup":
-      commands.push(...extractAllCommandsFromAST(n["body"], offset));
-      break;
+      collectNode(node.body, source, commands);
+      return;
 
-    // Control flow
     case "If":
-      commands.push(...extractAllCommandsFromAST(n["clause"], offset));
-      commands.push(...extractAllCommandsFromAST(n["then"], offset));
-      commands.push(...extractAllCommandsFromAST(n["else"], offset));
-      break;
+      collectNode(node.clause, source, commands);
+      collectNode(node.then, source, commands);
+      if (node.else) collectNode(node.else, source, commands);
+      return;
 
     case "While":
-      commands.push(...extractAllCommandsFromAST(n["clause"], offset));
-      commands.push(...extractAllCommandsFromAST(n["body"], offset));
-      break;
+      collectNode(node.clause, source, commands);
+      collectNode(node.body, source, commands);
+      return;
 
     case "For":
-      commands.push(...extractAllCommandsFromAST(n["body"], offset));
-      break;
+      collectWord(node.name, source, commands);
+      for (const word of node.wordlist) {
+        collectWord(word, source, commands);
+      }
+      collectNode(node.body, source, commands);
+      return;
+
+    case "Select":
+      collectWord(node.name, source, commands);
+      for (const word of node.wordlist) {
+        collectWord(word, source, commands);
+      }
+      collectNode(node.body, source, commands);
+      return;
 
     case "Case":
-      walkArray(n["items"] as unknown[], commands, offset);
-      break;
+      collectWord(node.word, source, commands);
+      for (const item of node.items) {
+        collectCaseItem(item, source, commands);
+      }
+      return;
 
-    case "CaseItem":
-      commands.push(...extractAllCommandsFromAST(n["body"], offset));
-      break;
-
-    // Function definition
     case "Function":
-      commands.push(...extractAllCommandsFromAST(n["body"], offset));
-      break;
+      collectWord(node.name, source, commands);
+      collectNode(node.body, source, commands);
+      for (const redirect of node.redirects) {
+        collectRedirect(redirect, source, commands);
+      }
+      return;
 
-    // Nested script inside $() or ``
-    // Note: CommandExpansion.pos is undefined in unbash. The correct innerOffset
-    // is computed in walkWordParts from the containing word's pos. This case is
-    // a fallback for any path that bypasses walkWordParts — strip argRanges to
-    // avoid display corruption (detection still works via cmd.args).
-    case "CommandExpansion": {
-      const innerCmds = extractAllCommandsFromAST(n["script"], offset);
-      commands.push(...innerCmds.map(({ argRanges: _, ...cmd }) => cmd));
-      break;
+    case "Coproc":
+      if (node.name) collectWord(node.name, source, commands);
+      collectNode(node.body, source, commands);
+      for (const redirect of node.redirects) {
+        collectRedirect(redirect, source, commands);
+      }
+      return;
+
+    case "TestCommand":
+      collectTestExpression(node.expression, source, commands);
+      return;
+
+    case "ArithmeticFor":
+      collectArithmeticExpression(node.initialize, source, commands);
+      collectArithmeticExpression(node.test, source, commands);
+      collectArithmeticExpression(node.update, source, commands);
+      collectNode(node.body, source, commands);
+      return;
+
+    case "ArithmeticCommand":
+      collectArithmeticExpression(node.expression, source, commands);
+      return;
+  }
+}
+
+function collectCommand(node: Command, source: string, commands: CommandRef[]) {
+  if (node.name) {
+    commands.push({ node, source });
+  }
+
+  for (const prefix of node.prefix) {
+    collectAssignment(prefix, source, commands);
+  }
+
+  for (const word of node.suffix) {
+    collectWord(word, source, commands);
+  }
+
+  for (const redirect of node.redirects) {
+    collectRedirect(redirect, source, commands);
+  }
+}
+
+function collectAssignment(assignment: AssignmentPrefix, source: string, commands: CommandRef[]) {
+  if (assignment.value) {
+    collectWord(assignment.value, source, commands);
+  }
+
+  if (assignment.array) {
+    for (const word of assignment.array) {
+      collectWord(word, source, commands);
     }
+  }
+}
 
-    // Variable assignment (may contain expansions in value)
-    case "Assignment":
-      walkWordParts(n["value"], commands, offset);
-      break;
+function collectRedirect(redirect: Redirect, source: string, commands: CommandRef[]) {
+  if (redirect.target) {
+    collectWord(redirect.target, source, commands);
+  }
+
+  if (redirect.body) {
+    collectWord(redirect.body, source, commands);
+  }
+}
+
+function collectWord(word: Word | undefined, source: string, commands: CommandRef[]) {
+  if (!word?.parts) return;
+  for (const part of word.parts) {
+    collectWordPart(part, source, commands);
+  }
+}
+
+function collectWordPart(
+  part: WordPart | CommandExpansionPart | ProcessSubstitutionPart,
+  source: string,
+  commands: CommandRef[],
+) {
+  switch (part.type) {
+    case "DoubleQuoted":
+    case "LocaleString":
+      for (const child of part.parts) {
+        collectWordPart(child, source, commands);
+      }
+      return;
+
+    case "CommandExpansion":
+    case "ProcessSubstitution":
+      if (part.script) {
+        collectNode(part.script, expansionSource(part, source), commands);
+      }
+      return;
+
+    case "ParameterExpansion":
+      collectParameterExpansion(part, source, commands);
+      return;
 
     default:
-      // Word nodes (suffix/prefix args) have no `type` but may have
-      // a `parts` getter with CommandExpansions inside.
-      // This getter is non-enumerable (unbash WordImpl prototype),
-      // so we must access it explicitly.
-      //
-      // Wrapper nodes like DoubleQuoted also have a `parts` array
-      // that may contain CommandExpansions. We handle both cases here.
-      walkWordParts(n, commands, offset);
-      break;
-  }
-
-  return commands;
-}
-
-/** Recurse into each element of an array, if it exists. */
-function walkArray(arr: unknown[] | undefined, commands: ExtractedCommand[], offset: number = 0) {
-  if (!Array.isArray(arr)) return;
-  for (const item of arr) {
-    commands.push(...extractAllCommandsFromAST(item, offset));
+      return;
   }
 }
 
-/**
- * Extract commands from a word node's `parts` getter.
- * unbash's WordImpl stores `parts` as a non-enumerable prototype getter,
- * so Object.values/Object.keys won't find it — we access it directly.
- *
- * When a part is a CommandExpansion and the word has a known position,
- * we compute the correct inner offset (wordPos + offset + 2 to skip "$(")
- * and pass it into the recursive extraction. This fixes argRanges for
- * commands inside $() so raw.slice(pos, end) resolves correctly.
- * The corrections compose additively for nested substitutions.
- */
-function walkWordParts(node: unknown, commands: ExtractedCommand[], offset: number = 0) {
-  if (!node || typeof node !== "object") return;
-  const n = node as Record<string, unknown>;
-  const parts = n["parts"];
-  if (!Array.isArray(parts)) return;
-  const wordPos = typeof n["pos"] === "number" ? n["pos"] : undefined;
+function collectParameterExpansion(part: ParameterExpansionPart, source: string, commands: CommandRef[]) {
+  if (part.operand) {
+    collectWord(part.operand, source, commands);
+  }
 
-  for (const part of parts as unknown[]) {
-    if (!part || typeof part !== "object") continue;
-    const p = part as Record<string, unknown>;
-    if (p["type"] === "CommandExpansion" && wordPos !== undefined) {
-      // wordPos is the position of this word relative to the current offset context.
-      // The inner script content starts 2 chars in (past "$(").
-      const innerOffset = wordPos + offset + 2;
-      commands.push(...extractAllCommandsFromAST(p["script"], innerOffset));
-    } else {
-      commands.push(...extractAllCommandsFromAST(part, offset));
+  if (part.slice) {
+    collectWord(part.slice.offset, source, commands);
+    if (part.slice.length) {
+      collectWord(part.slice.length, source, commands);
     }
   }
+
+  if (part.replace) {
+    collectWord(part.replace.pattern, source, commands);
+    collectWord(part.replace.replacement, source, commands);
+  }
+}
+
+function expansionSource(part: CommandExpansionPart | ProcessSubstitutionPart, fallbackSource: string): string {
+  if (part.inner != null) return part.inner;
+
+  const text = part.text;
+  if (text.startsWith("$(") && text.endsWith(")")) {
+    return text.slice(2, -1);
+  }
+  if ((text.startsWith("<(") || text.startsWith(">(")) && text.endsWith(")")) {
+    return text.slice(2, -1);
+  }
+  if (text.startsWith("`") && text.endsWith("`")) {
+    return text.slice(1, -1);
+  }
+
+  return fallbackSource;
+}
+
+function collectCaseItem(item: { pattern: Word[]; body: Node }, source: string, commands: CommandRef[]) {
+  for (const pattern of item.pattern) {
+    collectWord(pattern, source, commands);
+  }
+  collectNode(item.body, source, commands);
+}
+
+function collectTestExpression(expr: TestExpression, source: string, commands: CommandRef[]) {
+  switch (expr.type) {
+    case "TestUnary":
+      collectWord(expr.operand, source, commands);
+      return;
+    case "TestBinary":
+      collectWord(expr.left, source, commands);
+      collectWord(expr.right, source, commands);
+      return;
+    case "TestLogical":
+      collectTestExpression(expr.left, source, commands);
+      collectTestExpression(expr.right, source, commands);
+      return;
+    case "TestNot":
+      collectTestExpression(expr.operand, source, commands);
+      return;
+    case "TestGroup":
+      collectTestExpression(expr.expression, source, commands);
+      return;
+  }
+}
+
+function collectArithmeticExpression(expr: ArithmeticExpression | undefined, source: string, commands: CommandRef[]) {
+  if (!expr) return;
+
+  switch (expr.type) {
+    case "ArithmeticBinary":
+      collectArithmeticExpression(expr.left, source, commands);
+      collectArithmeticExpression(expr.right, source, commands);
+      return;
+    case "ArithmeticUnary":
+      collectArithmeticExpression(expr.operand, source, commands);
+      return;
+    case "ArithmeticTernary":
+      collectArithmeticExpression(expr.test, source, commands);
+      collectArithmeticExpression(expr.consequent, source, commands);
+      collectArithmeticExpression(expr.alternate, source, commands);
+      return;
+    case "ArithmeticGroup":
+      collectArithmeticExpression(expr.expression, source, commands);
+      return;
+    case "ArithmeticWord":
+      return;
+  }
+}
+
+export function getCommandName(cmd: CommandRef): string {
+  return cmd.node.name?.value ?? cmd.node.name?.text ?? "";
+}
+
+export function getCommandArgs(cmd: CommandRef): string[] {
+  return cmd.node.suffix.map(word => word.value ?? word.text);
 }
 
 /**
@@ -191,19 +303,19 @@ function walkWordParts(node: unknown, commands: ExtractedCommand[], offset: numb
  * The allowlist tokens must appear in order in the actual args,
  * but extra flags or trailing positional args are permitted.
  */
-export function isCommandAllowed(cmd: ExtractedCommand, allowlist: string[]): boolean {
+export function isCommandAllowed(cmd: CommandRef, allowlist: string[]): boolean {
+  const name = getCommandName(cmd);
+  const args = getCommandArgs(cmd);
+
   for (const entry of allowlist) {
     const tokens = entry.split(" ");
     const entryName = tokens[0]!;
     const entryArgs = tokens.slice(1);
 
-    if (entryName !== cmd.name) continue;
+    if (entryName !== name) continue;
 
-    // Base command match with no arg requirements: allow everything
     if (entryArgs.length === 0) return true;
-
-    // Subsequence match: entryArgs tokens must appear in order in cmd.args
-    if (isSubsequence(entryArgs, cmd.args)) return true;
+    if (isSubsequence(entryArgs, args)) return true;
   }
 
   return false;

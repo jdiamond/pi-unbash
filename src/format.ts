@@ -1,4 +1,5 @@
-import type { ExtractedCommand } from "./types.ts";
+import type { Redirect, Word } from "unbash";
+import type { CommandRef } from "./types.ts";
 
 export const FORMAT_COMMAND_DEFAULT_MAX_LENGTH = 120;
 export const FORMAT_COMMAND_DEFAULT_ARG_MAX_LENGTH = 40;
@@ -6,7 +7,7 @@ export const FORMAT_COMMAND_DEFAULT_ARG_MAX_LENGTH = 40;
 /**
  * Format an extracted command for display.
  *
- * Re-serializes from AST tokens, preserving original quoting via argRanges.
+ * Re-serializes from AST tokens, preserving original quoting via source slices.
  * The command name is always shown verbatim. Each argument token is elided
  * individually if needed:
  *   - Path-like tokens (starting with /, ~/, ./, or ../) get path-aware
@@ -17,56 +18,92 @@ export const FORMAT_COMMAND_DEFAULT_ARG_MAX_LENGTH = 40;
  * If the total result still exceeds maxLength, it is hard-truncated with "…".
  */
 export function formatCommand(
-  cmd: ExtractedCommand,
-  raw: string,
+  cmd: CommandRef,
   options?: { maxLength?: number; argMaxLength?: number },
 ): string {
   const maxLength = options?.maxLength ?? FORMAT_COMMAND_DEFAULT_MAX_LENGTH;
   const argMaxLength = options?.argMaxLength ?? FORMAT_COMMAND_DEFAULT_ARG_MAX_LENGTH;
 
-  // Build token strings: name + each arg in its original form (quoting preserved).
-  const argTokens: string[] = cmd.argRanges
-    ? cmd.argRanges.map(r => raw.slice(r.pos, r.end))
-    : cmd.args;
+  const name = displayWord(cmd.node.name, cmd.source).replace(/\n/g, "↵");
+  const rawArgs = cmd.node.suffix.map(arg => displayWord(arg, cmd.source).replace(/\n/g, "↵"));
 
-  // Command name is always shown verbatim; only args are elided.
-  const name = cmd.name.replace(/\n/g, "↵");
-  const rawArgs = argTokens.map(t => t.replace(/\n/g, "↵"));
+  const rawRedirectParts = cmd.node.redirects
+    .filter(redirect => !isRenderableHeredoc(redirect))
+    .map(redirect => renderRedirect(redirect, cmd.source).replace(/\n/g, "↵"));
 
-  // If the full command fits within maxLength, skip elision entirely.
-  const rawHeredocParts = cmd.heredocs?.map(h => {
-    const q = h.quoted ? "'" : "";
-    return `${h.operator}${q}${h.marker}${q}↵` + h.content.replace(/\n/g, "↵") + h.marker;
-  }) ?? [];
-  const rawRedirectParts = cmd.otherRedirects?.map(r => r.text.replace(/\n/g, "↵")) ?? [];
+  const rawHeredocParts = cmd.node.redirects
+    .filter(isRenderableHeredoc)
+    .map(redirect => renderFullHeredoc(redirect, cmd.source));
+
   const fullDisplay = [name, ...rawArgs, ...rawRedirectParts, ...rawHeredocParts].join(" ");
   if (fullDisplay.length <= maxLength) return fullDisplay;
 
-  const args = rawArgs.map(t => elideToken(t, argMaxLength));
-
-  const heredocParts = cmd.heredocs?.map(h => {
-    const q = h.quoted ? "'" : "";
-    const prefix = `${h.operator}${q}${h.marker}${q}↵`;
-    const content = h.content.replace(/\n/g, "↵");
-    const full = content + h.marker;
-    if (full.length <= argMaxLength) {
-      return prefix + full;
-    }
-    return prefix + content.slice(0, argMaxLength) + "…";
-  }) ?? [];
-
-  const otherRedirectParts = cmd.otherRedirects?.map(r =>
-    elideToken(r.text.replace(/\n/g, "↵"), argMaxLength)
-  ) ?? [];
+  const args = rawArgs.map(token => elideToken(token, argMaxLength));
+  const otherRedirectParts = rawRedirectParts.map(token => elideToken(token, argMaxLength));
+  const heredocParts = cmd.node.redirects
+    .filter(isRenderableHeredoc)
+    .map(redirect => renderElidedHeredoc(redirect, cmd.source, argMaxLength));
 
   let display = [name, ...args, ...otherRedirectParts, ...heredocParts].join(" ");
-
-  // Hard-truncate if total exceeds maxLength (edge case: many args).
   if (display.length > maxLength) {
     display = display.slice(0, maxLength - 1) + "…";
   }
 
   return display;
+}
+
+function isRenderableHeredoc(redirect: Redirect): boolean {
+  return (redirect.operator === "<<" || redirect.operator === "<<-") && redirect.content != null;
+}
+
+function renderRedirect(redirect: Redirect, source: string): string {
+  const prefix = redirectPrefix(redirect);
+  const target = redirect.target ? displayWord(redirect.target, source) : "";
+  return `${prefix}${target}`;
+}
+
+function renderFullHeredoc(redirect: Redirect, source: string): string {
+  const prefix = `${redirectPrefix(redirect)}${heredocTargetDisplay(redirect, source)}↵`;
+  return prefix + (redirect.content ?? "").replace(/\n/g, "↵") + heredocMarker(redirect, source);
+}
+
+function renderElidedHeredoc(redirect: Redirect, source: string, argMaxLength: number): string {
+  const prefix = `${redirectPrefix(redirect)}${heredocTargetDisplay(redirect, source)}↵`;
+  const content = (redirect.content ?? "").replace(/\n/g, "↵");
+  const full = content + heredocMarker(redirect, source);
+
+  if (full.length <= argMaxLength) {
+    return prefix + full;
+  }
+
+  return prefix + content.slice(0, argMaxLength) + "…";
+}
+
+function redirectPrefix(redirect: Redirect): string {
+  const fd = redirect.fileDescriptor != null ? String(redirect.fileDescriptor) : "";
+  const variableName = redirect.variableName ? `{${redirect.variableName}}` : "";
+  return `${fd}${variableName}${redirect.operator}`;
+}
+
+function heredocTargetDisplay(redirect: Redirect, source: string): string {
+  const marker = rawHeredocMarker(redirect, source);
+  return redirect.heredocQuoted ? `'${marker}'` : marker;
+}
+
+function heredocMarker(redirect: Redirect, source: string): string {
+  return rawHeredocMarker(redirect, source).replaceAll("\\", "");
+}
+
+function rawHeredocMarker(redirect: Redirect, source: string): string {
+  if (!redirect.target) return "";
+  const raw = displayWord(redirect.target, source);
+  return raw.length > 0 ? raw : (redirect.target.value ?? redirect.target.text);
+}
+
+function displayWord(word: Word | undefined, source: string): string {
+  if (!word) return "";
+  const sliced = source.slice(word.pos, word.end);
+  return sliced.length > 0 ? sliced : word.text;
 }
 
 /** Elide a single argument token if warranted. */

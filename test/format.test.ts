@@ -5,127 +5,168 @@ import { extractAllCommandsFromAST } from "../src/extract.ts";
 import { formatCommand } from "../src/format.ts";
 
 test("formatCommand", async (t) => {
+  function first(raw: string) {
+    return extractAllCommandsFromAST(parseBash(raw), raw)[0]!;
+  }
 
-  await t.test("re-serializes args as tokens", () => {
-    // Without argRanges, falls back to cmd.args values joined with spaces.
-    assert.equal(formatCommand({ name: "git", args: ["commit", "-am", "msg"] }, ""), "git commit -am msg");
+  function displays(raw: string) {
+    return extractAllCommandsFromAST(parseBash(raw), raw).map(cmd => formatCommand(cmd));
+  }
+
+  await t.test("basic serialization", async (t) => {
+    await t.test("re-serializes simple args as tokens", () => {
+      assert.equal(formatCommand(first("git commit -am msg")), "git commit -am msg");
+    });
+
+    await t.test("preserves original quoting via source slices", () => {
+      const raw = `git commit -m "my message"`;
+      assert.equal(formatCommand(first(raw)), raw);
+    });
+
+    await t.test("does not truncate short commands", () => {
+      assert.equal(formatCommand(first("pwd")), "pwd");
+    });
   });
 
-  await t.test("preserves original quoting via argRanges", () => {
-    const raw = `git commit -m "my message"`;
-    const [cmd] = extractAllCommandsFromAST(parseBash(raw));
-    assert.equal(formatCommand(cmd!, raw), raw);
+  await t.test("length limiting and token elision", async (t) => {
+    await t.test("prefix-truncates long non-path args, preserving command name and flags", () => {
+      const raw = `git commit -m "Add a very long commit message that exceeds the token max"`;
+      assert.equal(formatCommand(first(raw), { maxLength: 50, argMaxLength: 10 }), `git commit -m "Add a ver…`);
+    });
+
+    await t.test("hard-truncates total display at maxLength", () => {
+      const raw = "echo aa bb cc dd ee ff gg";
+      assert.equal(formatCommand(first(raw), { maxLength: 15 }), "echo aa bb cc …");
+    });
+
+    await t.test("replaces newlines with ↵ before elision", () => {
+      const raw = "python3 -c \"print('hello\\nworld')\"";
+      assert.equal(formatCommand(first(raw)), `python3 -c \"print('hello\\nworld')\"`);
+    });
   });
 
-  await t.test("elides long paths individually, preserving surrounding tokens", () => {
-    const raw = "git -C /Users/jdiamond/code/pi-unbash add -A";
-    const [cmd] = extractAllCommandsFromAST(parseBash(raw));
-    assert.equal(formatCommand(cmd!, raw, { maxLength: 40 }), "git -C /Users/…/pi-unbash add -A");
+  await t.test("path-aware elision", async (t) => {
+    await t.test("elides long paths individually, preserving surrounding tokens", () => {
+      const raw = "git -C /Users/jdiamond/code/pi-unbash add -A";
+      assert.equal(formatCommand(first(raw), { maxLength: 40 }), "git -C /Users/…/pi-unbash add -A");
+    });
+
+    await t.test("elides bare relative paths (no leading ./ or /)", () => {
+      const raw = "git add packages/tui/src/terminal.ts";
+      assert.equal(formatCommand(first(raw), { maxLength: 35 }), "git add packages/tui/…/terminal.ts");
+    });
+
+    await t.test("elides quoted paths containing $", () => {
+      const raw = `cp "$PROJECT_ROOT/src/routes/\\$page.tsx" dist/`;
+      assert.equal(formatCommand(first(raw), { maxLength: 40 }), `cp "$PROJECT_ROOT/src/…/\\$page.tsx" dis…`);
+    });
+
+    await t.test("does not elide paths that fit within maxLength", () => {
+      const raw = "rm /Users/jdiamond/code/pi-unbash/test/ast.test.ts";
+      assert.equal(formatCommand(first(raw)), raw);
+    });
+
+    await t.test("does not treat URLs as paths", () => {
+      const raw = `curl https://github.com/owner/repo/blob/main/README.md`;
+      assert.equal(formatCommand(first(raw), { argMaxLength: 20 }), raw);
+    });
+
+    await t.test("does not treat sentences with a slash as paths", () => {
+      const raw = `echo "enable foo/bar and baz qux quux corge"`;
+      assert.equal(formatCommand(first(raw)), raw);
+    });
   });
 
-  await t.test("prefix-truncates long non-path args, preserving command name and flags", () => {
-    const raw = `git commit -m "Add a very long commit message that exceeds the token max"`;
-    const [cmd] = extractAllCommandsFromAST(parseBash(raw));
-    assert.equal(formatCommand(cmd!, raw, { maxLength: 50, argMaxLength: 10 }), `git commit -m "Add a ver…`);
+  await t.test("nested command formatting", async (t) => {
+    await t.test("correctly resolves nested command source for commands inside $()", () => {
+      const raw = `git reset --soft $(git merge-base main HEAD)`;
+      const inner = extractAllCommandsFromAST(parseBash(raw), raw)
+        .find(cmd => formatCommand(cmd) === "git merge-base main HEAD");
+      assert.ok(inner, "should extract inner git command");
+      assert.equal(formatCommand(inner), "git merge-base main HEAD");
+    });
+
+    await t.test("formats both outer and inner commands for double-quoted command substitution", () => {
+      const raw = `python3 -c 'print("ok")' "hello $(python3 -c 'print("inner")')"`;
+      assert.deepEqual(displays(raw), [
+        raw,
+        `python3 -c 'print("inner")'`,
+      ]);
+    });
+
+    await t.test("formats both outer and inner commands for assignment command substitution", () => {
+      const raw = `FOO=$(python3 -c 'print("inner")') env`;
+      assert.deepEqual(displays(raw), [
+        "env",
+        `python3 -c 'print("inner")'`,
+      ]);
+    });
+
+    await t.test("formats inner commands extracted from backticks", () => {
+      const raw = "echo `python3 -c 'print(\"inner\")'`";
+      assert.deepEqual(displays(raw), [
+        raw,
+        `python3 -c 'print("inner")'`,
+      ]);
+    });
+
+    await t.test("formats inner commands extracted from process substitution", () => {
+      const raw = `cat <(python3 -c 'print("inner")')`;
+      assert.deepEqual(displays(raw), [
+        raw,
+        `python3 -c 'print("inner")'`,
+      ]);
+    });
+
+    await t.test("preserves discovery order for multiple nested substitutions", () => {
+      const raw = `python3 -c 'print("outer")' "$(python3 -c 'print("one")')" "$(python3 -c 'print("two")')"`;
+      assert.deepEqual(displays(raw), [
+        raw,
+        `python3 -c 'print("one")'`,
+        `python3 -c 'print("two")'`,
+      ]);
+    });
   });
 
-  await t.test("hard-truncates total display at maxLength", () => {
-    const cmd = { name: "echo", args: ["aa", "bb", "cc", "dd", "ee", "ff", "gg"] };
-    assert.equal(formatCommand(cmd, "", { maxLength: 15 }), "echo aa bb cc …");
-  });
+  await t.test("redirect and heredoc formatting", async (t) => {
+    await t.test("includes output redirect in display", () => {
+      const raw = `echo hello >out.txt`;
+      assert.equal(formatCommand(first(raw)), raw);
+    });
 
-  await t.test("replaces newlines with ↵ before elision", () => {
-    assert.equal(formatCommand({ name: "python3", args: ["-c", "print('hello\nworld')"] }, ""), "python3 -c print('hello↵world')");
-  });
+    await t.test("includes input redirect in display", () => {
+      const raw = `cat <in.txt`;
+      assert.equal(formatCommand(first(raw)), raw);
+    });
 
-  await t.test("correctly resolves argRanges for commands inside $()", () => {
-    const raw = `git reset --soft $(git merge-base main HEAD)`;
-    const cmds = extractAllCommandsFromAST(parseBash(raw));
-    const inner = cmds.find(c => c.name === "git" && c.args[0] === "merge-base");
-    assert.ok(inner, "should extract inner git command");
-    assert.equal(formatCommand(inner!, raw), "git merge-base main HEAD");
-  });
+    await t.test("includes stderr redirect in display", () => {
+      const raw = `cmd 2>/dev/null`;
+      assert.equal(formatCommand(first(raw)), raw);
+    });
 
-  await t.test("elides bare relative paths (no leading ./ or /)", () => {
-    const raw = "git add packages/tui/src/terminal.ts";
-    const [cmd] = extractAllCommandsFromAST(parseBash(raw));
-    assert.equal(formatCommand(cmd!, raw, { maxLength: 35 }), "git add packages/tui/…/terminal.ts");
-  });
+    await t.test("includes heredoc content in display with operator and marker preserved", () => {
+      const raw = `node --input-type=module <<'EOF'\nconsole.log("hi");\nEOF`;
+      assert.equal(formatCommand(first(raw)), `node --input-type=module <<'EOF'↵console.log("hi");↵EOF`);
+    });
 
-  await t.test("elides quoted paths containing $", () => {
-    const raw = `cp "$PROJECT_ROOT/src/routes/\\$page.tsx" dist/`;
-    const [cmd] = extractAllCommandsFromAST(parseBash(raw));
-    assert.equal(formatCommand(cmd!, raw, { maxLength: 40 }), `cp "$PROJECT_ROOT/src/…/\\$page.tsx" dis…`);
-  });
+    await t.test("elides long heredoc content at argMaxLength", () => {
+      const raw = `bash <<EOF\n${"x".repeat(100)}\nEOF`;
+      assert.equal(formatCommand(first(raw), { maxLength: 50, argMaxLength: 20 }), `bash <<EOF↵${"x".repeat(20)}…`);
+    });
 
-  await t.test("does not treat URLs as paths", () => {
-    const raw = `curl https://github.com/owner/repo/blob/main/README.md`;
-    const [cmd] = extractAllCommandsFromAST(parseBash(raw));
-    assert.equal(formatCommand(cmd!, raw, { argMaxLength: 20 }), "curl https://github.com/owner/repo/blob/main/README.md");
-  });
+    await t.test("preserves <<- operator in heredoc display", () => {
+      const raw = `bash <<-EOF\n\techo hi\nEOF`;
+      assert.equal(formatCommand(first(raw)), `bash <<-EOF↵\techo hi↵EOF`);
+    });
 
-  await t.test("does not treat sentences with a slash as paths", () => {
-    const raw = `echo "enable foo/bar and baz qux quux corge"`;
-    const [cmd] = extractAllCommandsFromAST(parseBash(raw));
-    assert.equal(formatCommand(cmd!, raw), `echo "enable foo/bar and baz qux quux corge"`);
-  });
+    await t.test("includes redirect plus heredoc in display", () => {
+      const raw = `git rebase -i main --autosquash 2>&1 <<'EOF'\npick abc feat\nEOF`;
+      assert.equal(formatCommand(first(raw)), `git rebase -i main --autosquash 2>&1 <<'EOF'↵pick abc feat↵EOF`);
+    });
 
-  await t.test("includes heredoc content in display with operator and marker preserved", () => {
-    const raw = `node --input-type=module <<'EOF'\nconsole.log("hi");\nEOF`;
-    const [cmd] = extractAllCommandsFromAST(parseBash(raw));
-    assert.equal(formatCommand(cmd!, raw), `node --input-type=module <<'EOF'↵console.log("hi");↵EOF`);
+    await t.test("renders non-heredoc redirects before heredoc in display", () => {
+      const raw = `cmd >out.txt <<EOF\nhello\nEOF`;
+      assert.equal(formatCommand(first(raw)), "cmd >out.txt <<EOF↵hello↵EOF");
+    });
   });
-
-  await t.test("elides long heredoc content at argMaxLength", () => {
-    const raw = `bash <<EOF\n${"x".repeat(100)}\nEOF`;
-    const [cmd] = extractAllCommandsFromAST(parseBash(raw));
-    assert.equal(formatCommand(cmd!, raw, { maxLength: 50, argMaxLength: 20 }), `bash <<EOF↵${"x".repeat(20)}…`);
-  });
-
-  await t.test("preserves <<- operator in heredoc display", () => {
-    const raw = `bash <<-EOF\n\techo hi\nEOF`;
-    const [cmd] = extractAllCommandsFromAST(parseBash(raw));
-    assert.equal(formatCommand(cmd!, raw), `bash <<-EOF↵\techo hi↵EOF`);
-  });
-
-  await t.test("does not elide paths that fit within maxLength", () => {
-    const raw = "rm /Users/jdiamond/code/pi-unbash/test/ast.test.ts";
-    const [cmd] = extractAllCommandsFromAST(parseBash(raw));
-    assert.equal(formatCommand(cmd!, raw), raw);
-  });
-
-  await t.test("does not truncate short commands", () => {
-    assert.equal(formatCommand({ name: "pwd", args: [] }, "pwd"), "pwd");
-  });
-
-  await t.test("includes 2>&1 redirect in display", () => {
-    const raw = `git rebase -i main --autosquash 2>&1 <<'EOF'\npick abc feat\nEOF`;
-    const [cmd] = extractAllCommandsFromAST(parseBash(raw));
-    assert.equal(formatCommand(cmd!, raw), `git rebase -i main --autosquash 2>&1 <<'EOF'↵pick abc feat↵EOF`);
-  });
-
-  await t.test("includes output redirect in display", () => {
-    const raw = `echo hello >out.txt`;
-    const [cmd] = extractAllCommandsFromAST(parseBash(raw));
-    assert.equal(formatCommand(cmd!, raw), "echo hello >out.txt");
-  });
-
-  await t.test("includes input redirect in display", () => {
-    const raw = `cat <in.txt`;
-    const [cmd] = extractAllCommandsFromAST(parseBash(raw));
-    assert.equal(formatCommand(cmd!, raw), "cat <in.txt");
-  });
-
-  await t.test("includes stderr redirect in display", () => {
-    const raw = `cmd 2>/dev/null`;
-    const [cmd] = extractAllCommandsFromAST(parseBash(raw));
-    assert.equal(formatCommand(cmd!, raw), "cmd 2>/dev/null");
-  });
-
-  await t.test("renders non-heredoc redirects before heredoc in display", () => {
-    const raw = `cmd >out.txt <<EOF\nhello\nEOF`;
-    const [cmd] = extractAllCommandsFromAST(parseBash(raw));
-    assert.equal(formatCommand(cmd!, raw), "cmd >out.txt <<EOF↵hello↵EOF");
-  });
-
 });

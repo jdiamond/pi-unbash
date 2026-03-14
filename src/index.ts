@@ -4,7 +4,7 @@ import { parse as parseBash } from "unbash";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
-import { extractAllCommandsFromAST, isCommandAllowed } from "./extract.ts";
+import { extractAllCommandsFromAST, getCommandName, isCommandAllowed } from "./extract.ts";
 import { formatCommand, FORMAT_COMMAND_DEFAULT_MAX_LENGTH, FORMAT_COMMAND_DEFAULT_ARG_MAX_LENGTH } from "./format.ts";
 import { DEFAULT_ALWAYS_ALLOWED } from "./defaults.ts";
 
@@ -118,15 +118,15 @@ function loadConfig(): LoadedConfigResult {
 function saveConfig(config: UnbashConfig) {
   try {
     fs.mkdirSync(AGENT_DIR, { recursive: true });
-    
+
     let settings: any = {};
     if (fs.existsSync(SETTINGS_PATH)) {
       settings = JSON.parse(fs.readFileSync(SETTINGS_PATH, "utf-8"));
     }
-    
+
     // Mutate only our namespace
     settings.unbash = config;
-    
+
     fs.writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2), "utf-8");
   } catch (e) {
     console.error("Failed to save unbash config to settings.json", e);
@@ -250,8 +250,8 @@ export default function (pi: ExtensionAPI) {
     }
 
     // Extract EVERY command in the tree (including pipes, gates, subshells)
-    const allCommands = extractAllCommandsFromAST(ast);
-    
+    const allCommands = extractAllCommandsFromAST(ast, rawCmd);
+
     if (allCommands.length === 0) return;
 
     // Find all commands that are NOT in the allow list or session list
@@ -265,15 +265,15 @@ export default function (pi: ExtensionAPI) {
     }
 
     if (!ctx.hasUI) {
-      return { 
-        block: true, 
-        reason: `Commands [${unauthorizedCommands.map(c => formatCommand(c, rawCmd, { maxLength: config.commandDisplayMaxLength, argMaxLength: config.commandDisplayArgMaxLength })).join(", ")}] require UI confirmation.` 
+      return {
+        block: true,
+        reason: `Commands [${unauthorizedCommands.map(c => formatCommand(c, { maxLength: config.commandDisplayMaxLength, argMaxLength: config.commandDisplayArgMaxLength })).join(", ")}] require UI confirmation.`
       };
     }
 
     // Deduplicate for display
-    const uniqueUnauthorized = Array.from(new Set(unauthorizedCommands.map(c => formatCommand(c, rawCmd, { maxLength: config.commandDisplayMaxLength, argMaxLength: config.commandDisplayArgMaxLength }))));
-    const uniqueBaseNames = Array.from(new Set(unauthorizedCommands.map(c => c.name)));
+    const uniqueUnauthorized = Array.from(new Set(unauthorizedCommands.map(c => formatCommand(c, { maxLength: config.commandDisplayMaxLength, argMaxLength: config.commandDisplayArgMaxLength }))));
+    const uniqueBaseNames = Array.from(new Set(unauthorizedCommands.map(getCommandName)));
     const alwaysLabel = `Always allow ${uniqueBaseNames.join(", ")} (this session)`;
 
     const choice = await ctx.ui.select(
