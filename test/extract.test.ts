@@ -120,6 +120,32 @@ test("extractAllCommandsFromAST", async (t) => {
     ]);
   });
 
+  await t.test("extracts commands from unquoted heredoc bodies", () => {
+    assert.deepEqual(summarize("cat <<EOF\n$(rm -rf /)\nEOF"), [
+      { name: "cat", args: [] },
+      { name: "rm", args: ["-rf", "/"] },
+    ]);
+  });
+
+  await t.test("extracts backtick commands from unquoted heredoc bodies", () => {
+    assert.deepEqual(summarize("cat <<EOF\n`rm -rf /`\nEOF"), [
+      { name: "cat", args: [] },
+      { name: "rm", args: ["-rf", "/"] },
+    ]);
+  });
+
+  await t.test("does not treat plain unquoted heredoc text as commands", () => {
+    assert.deepEqual(summarize("cat <<EOF\nrm -rf /\nEOF"), [
+      { name: "cat", args: [] },
+    ]);
+  });
+
+  await t.test("does not extract commands from quoted heredoc bodies", () => {
+    assert.deepEqual(summarize("cat <<'EOF'\n$(rm -rf /)\nEOF"), [
+      { name: "cat", args: [] },
+    ]);
+  });
+
 });
 
 test("isCommandAllowed", async (t) => {

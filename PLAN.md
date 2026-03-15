@@ -28,31 +28,22 @@ or `false`, `0`, `""`, etc., this branch is skipped and `loadConfig()` returns `
 ---
 
 ### 2. Command substitutions inside arithmetic are currently missed
-**Files:** `src/extract.ts:168-192`, `src/extract.ts:261-279`
+**Status:** deferred for now.
 
-`collectWordPart()` ignores `ArithmeticExpansion`, and `collectArithmeticExpression()` ignores `ArithmeticWord`.
+This appears to be an upstream `unbash` limitation rather than just a local traversal bug. I opened an upstream issue to discuss fixing the arithmetic AST shape there first:
 
-Repro:
+- `webpro-nl/unbash#1` — _Command substitutions inside arithmetic are not represented structurally in the AST_
 
-```bash
-echo $(( $(rm -rf /) + 1 ))
-(( $(rm -rf /) + 1 ))
-```
+For now, skip this item locally and revisit after upstream feedback.
 
-Current extraction only sees `echo` in the first case, and likely nothing dangerous in the second.
-
-**Why it matters:** this is a real security blind spot.
-
-**Suggested fix:** when you see an `ArithmeticExpansion` / `ArithmeticWord`, scan for `$(` / backticks and extract nested commands, or conservatively mark arithmetic containing command-substitution syntax as requiring approval.
-
-Add tests for both forms.
+**Reminder:** once the upstream `unbash` issue is addressed, come back and update `pi-unbash` to use the improved arithmetic AST instead of relying on the current gap/deferral.
 
 ---
 
 ### 3. Unquoted heredoc bodies can execute command substitutions, but they’re not inspected
-**File:** `src/extract.ts:151-157`
+**Status:** fixed locally for now; likely should also be addressed upstream in `unbash`.
 
-`collectRedirect()` visits `redirect.body`, but `unbash` doesn’t seem to expose parsed parts for heredoc bodies, so this misses cases like:
+`collectRedirect()` visited `redirect.body`, but the installed `unbash` build did not expose heredoc body parts, so unquoted heredocs like this were missed:
 
 ```bash
 cat <<EOF
@@ -60,19 +51,15 @@ $(rm -rf /)
 EOF
 ```
 
-Your extractor currently only sees `cat`.
+The current local fix parses unquoted `redirect.content` as shell text and inspects only embedded expansions inside words, without treating the heredoc body itself as executable commands.
 
-**Why it matters:** another security gap.
+Added test coverage for:
+- unquoted heredoc with `$(...)`
+- unquoted heredoc with backticks
+- quoted heredoc remaining inert
+- plain heredoc text not being treated as commands
 
-**Suggested fix:** for unquoted heredocs (`heredocQuoted !== true`), conservatively scan `redirect.content` for command substitution syntax. Even a safe fallback of “if unquoted heredoc contains `$(` or backticks, require confirmation” would be better than silently allowing it.
-
-Also add a paired test proving quoted heredocs do **not** trigger extraction:
-
-```bash
-cat <<'EOF'
-$(rm -rf /)
-EOF
-```
+**Reminder:** create a follow-up issue in `webpro-nl/unbash` about unquoted heredoc body expansions not being surfaced structurally/consumably. If that is fixed upstream, simplify or remove most of the local workaround in `pi-unbash`.
 
 ---
 
