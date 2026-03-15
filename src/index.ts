@@ -6,9 +6,9 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { extractAllCommandsFromAST, getCommandName, isCommandAllowed } from "./extract.ts";
 import { formatCommand, FORMAT_COMMAND_DEFAULT_MAX_LENGTH, FORMAT_COMMAND_DEFAULT_ARG_MAX_LENGTH } from "./format.ts";
+import { buildApprovalPrompt } from "./prompt.ts";
 import { DEFAULT_ALWAYS_ALLOWED } from "./defaults.ts";
 
-// 1. Define configuration storage using pi's native settings.json
 const AGENT_DIR = path.join(os.homedir(), ".pi", "agent");
 const SETTINGS_PATH = path.join(AGENT_DIR, "settings.json");
 
@@ -283,13 +283,14 @@ export default function (pi: ExtensionAPI) {
       };
     }
 
-    // Deduplicate for display
-    const uniqueUnauthorized = Array.from(new Set(unauthorizedCommands.map(c => formatCommand(c, { maxLength: config.commandDisplayMaxLength, argMaxLength: config.commandDisplayArgMaxLength }))));
     const uniqueBaseNames = Array.from(new Set(unauthorizedCommands.map(getCommandName)));
     const alwaysLabel = `Always allow ${uniqueBaseNames.join(", ")} (this session)`;
 
     const choice = await ctx.ui.select(
-      `⚠️ Unapproved Commands\n\n${uniqueUnauthorized.map(c => `- ${c}`).join("\n")}`,
+      buildApprovalPrompt(allCommands, unauthorizedCommands, {
+        maxLength: config.commandDisplayMaxLength,
+        argMaxLength: config.commandDisplayArgMaxLength,
+      }),
       ["Allow", alwaysLabel, "Reject"]
     );
 

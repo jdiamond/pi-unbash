@@ -39,8 +39,9 @@ If the AI attempts to run anything else (e.g., `git commit`, `npm`, `rm`, `node`
 ```text
 ⚠️ Unapproved Commands
 
- - npm test
- - git commit -A -m "update files"
+✔ cd /Users/…/project
+✖ npm test
+✖ git commit -A -m "update files"
 
  → Allow
    Always allow npm, git (this session)
