@@ -104,10 +104,13 @@ Matching uses **subsequence logic** — the tokens in your allowlist entry must 
 
 The confirmation prompt elides long command arguments to keep the display readable:
 
-- **Path arguments** (starting with `/`, `~/`, `./`, or `../`) get path-aware elision, keeping the first two path segments and the last (e.g. `/Users/jdiamond/code/pi-unbash` → `/Users/…/pi-unbash`).
-- **Other long arguments** are prefix-truncated at `commandDisplayArgMaxLength` chars with `…`.
 - **The command name** is always shown in full.
-- If the total display exceeds `commandDisplayMaxLength`, the whole string is hard-truncated.
+- If the full command fits within `commandDisplayMaxLength`, it is shown unchanged.
+- Otherwise, the formatter shrinks later tokens only as much as needed to fit the total budget.
+- **Path arguments** (starting with `/`, `~/`, `./`, or `../`) get path-aware middle elision that preserves the tail.
+- **Other long arguments** are prefix-truncated with `…` only when needed.
+- `commandDisplayArgMaxLength` acts as the minimum per-token elision target, not a hard cap when there is still room in the overall display budget.
+- If the total display still exceeds `commandDisplayMaxLength`, the whole string is hard-truncated.
 
 ```json
 {
@@ -119,7 +122,7 @@ The confirmation prompt elides long command arguments to keep the display readab
 ```
 
 - **`commandDisplayMaxLength`** — total character budget for the display string (default: `120`).
-- **`commandDisplayArgMaxLength`** — max chars shown per non-path argument before prefix-truncating (default: `40`).
+- **`commandDisplayArgMaxLength`** — minimum per-token elision target when shrinking long arguments/heredocs to fit the overall display budget (default: `40`).
 
 ### Commands
 

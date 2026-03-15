@@ -8,13 +8,13 @@ export const FORMAT_COMMAND_DEFAULT_ARG_MAX_LENGTH = 40;
  * Format an extracted command for display.
  *
  * Re-serializes from AST tokens, preserving original quoting via source slices.
- * The command name is always shown verbatim. Each argument token is elided
- * individually if needed:
- *   - Path-like tokens (starting with /, ~/, ./, or ../) get path-aware
- *     elision, keeping the first two path segments and the last
- *     (e.g. /Users/jdiamond/code/pi-unbash → /Users/…/pi-unbash).
- *   - Other tokens longer than argMaxLength are prefix-truncated: kept up to
- *     argMaxLength chars then "…".
+ * The command name is always shown verbatim. If the full command fits, it is
+ * shown unchanged. Otherwise, the formatter starts from the full display and
+ * shrinks later tokens only as much as needed to fit within maxLength:
+ *   - Path-like tokens get path-aware middle elision that preserves the tail.
+ *   - Other tokens are prefix-truncated with "…".
+ *   - argMaxLength acts as the minimum per-token elision target, not a hard cap
+ *     when there is still room in the overall maxLength budget.
  * If the total result still exceeds maxLength, it is hard-truncated with "…".
  */
 export function formatCommand(
@@ -25,26 +25,45 @@ export function formatCommand(
   const argMaxLength = options?.argMaxLength ?? FORMAT_COMMAND_DEFAULT_ARG_MAX_LENGTH;
 
   const name = displayWord(cmd.node.name, cmd.source).replace(/\n/g, "↵");
-  const rawArgs = cmd.node.suffix.map(arg => displayWord(arg, cmd.source).replace(/\n/g, "↵"));
+  const tokenSpecs = [
+    ...cmd.node.suffix.map(arg => {
+      const full = displayWord(arg, cmd.source).replace(/\n/g, "↵");
+      return makeTokenSpec(full, argMaxLength);
+    }),
+    ...cmd.node.redirects
+      .filter(redirect => !isRenderableHeredoc(redirect))
+      .map(redirect => {
+        const full = renderRedirect(redirect, cmd.source).replace(/\n/g, "↵");
+        return makeTokenSpec(full, argMaxLength);
+      }),
+    ...cmd.node.redirects
+      .filter(isRenderableHeredoc)
+      .map(redirect => {
+        const full = renderFullHeredoc(redirect, cmd.source);
+        const min = renderElidedHeredoc(redirect, cmd.source, argMaxLength);
+        return makeTokenSpec(full, argMaxLength, min);
+      }),
+  ];
 
-  const rawRedirectParts = cmd.node.redirects
-    .filter(redirect => !isRenderableHeredoc(redirect))
-    .map(redirect => renderRedirect(redirect, cmd.source).replace(/\n/g, "↵"));
-
-  const rawHeredocParts = cmd.node.redirects
-    .filter(isRenderableHeredoc)
-    .map(redirect => renderFullHeredoc(redirect, cmd.source));
-
-  const fullDisplay = [name, ...rawArgs, ...rawRedirectParts, ...rawHeredocParts].join(" ");
+  const fullDisplay = [name, ...tokenSpecs.map(spec => spec.full)].join(" ");
   if (fullDisplay.length <= maxLength) return fullDisplay;
 
-  const args = rawArgs.map(token => elideToken(token, argMaxLength));
-  const otherRedirectParts = rawRedirectParts.map(token => elideToken(token, argMaxLength));
-  const heredocParts = cmd.node.redirects
-    .filter(isRenderableHeredoc)
-    .map(redirect => renderElidedHeredoc(redirect, cmd.source, argMaxLength));
+  const tokens = tokenSpecs.map(spec => spec.full);
+  let overflow = fullDisplay.length - maxLength;
 
-  let display = [name, ...args, ...otherRedirectParts, ...heredocParts].join(" ");
+  for (let i = tokenSpecs.length - 1; i >= 0 && overflow > 0; i--) {
+    const spec = tokenSpecs[i]!;
+    const current = tokens[i]!;
+    const maxShrink = current.length - spec.min.length;
+    if (maxShrink <= 0) continue;
+
+    const nextTargetLength = current.length - Math.min(maxShrink, overflow);
+    const shrunk = spec.shrink(nextTargetLength);
+    tokens[i] = shrunk;
+    overflow -= current.length - shrunk.length;
+  }
+
+  let display = [name, ...tokens].join(" ");
   if (display.length > maxLength) {
     display = display.slice(0, maxLength - 1) + "…";
   }
@@ -106,6 +125,14 @@ function displayWord(word: Word | undefined, source: string): string {
   return sliced.length > 0 ? sliced : word.text;
 }
 
+function makeTokenSpec(full: string, argMaxLength: number, min = elideToken(full, argMaxLength)) {
+  return {
+    full,
+    min,
+    shrink: (targetLength: number) => shrinkToken(full, targetLength, min),
+  };
+}
+
 /** Elide a single argument token if warranted. */
 function elideToken(token: string, argMaxLength: number): string {
   if (isPathToken(token)) {
@@ -116,6 +143,14 @@ function elideToken(token: string, argMaxLength: number): string {
     return token.slice(0, argMaxLength) + "…";
   }
   return token;
+}
+
+function shrinkToken(token: string, targetLength: number, min: string): string {
+  if (token.length <= targetLength) return token;
+  if (targetLength <= min.length) return min;
+  if (targetLength <= 1) return "…";
+  if (isPathToken(token)) return shrinkPathToken(token, targetLength);
+  return token.slice(0, targetLength - 1) + "…";
 }
 
 /**
@@ -150,4 +185,22 @@ function elidePath(p: string): string {
   const parts = p.split("/");
   if (parts.length <= 3) return p;
   return parts.slice(0, 2).join("/") + "/…/" + parts[parts.length - 1];
+}
+
+function shrinkPathToken(token: string, targetLength: number): string {
+  if (token.length <= targetLength) return token;
+  if (targetLength <= 1) return "…";
+
+  const lastSlash = token.lastIndexOf("/");
+  if (lastSlash <= 0) {
+    return token.slice(0, targetLength - 1) + "…";
+  }
+
+  const suffix = token.slice(lastSlash);
+  const prefixBudget = targetLength - suffix.length - 1;
+  if (prefixBudget <= 0) {
+    return token.slice(0, targetLength - 1) + "…";
+  }
+
+  return token.slice(0, prefixBudget) + "…" + suffix;
 }

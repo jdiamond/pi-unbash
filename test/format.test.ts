@@ -29,14 +29,19 @@ test("formatCommand", async (t) => {
   });
 
   await t.test("length limiting and token elision", async (t) => {
-    await t.test("prefix-truncates long non-path args, preserving command name and flags", () => {
+    await t.test("uses the full display budget before truncating a long non-path arg", () => {
       const raw = `git commit -m "Add a very long commit message that exceeds the token max"`;
-      assert.equal(formatCommand(first(raw), { maxLength: 50, argMaxLength: 10 }), `git commit -m "Add a ver…`);
+      assert.equal(formatCommand(first(raw), { maxLength: 50, argMaxLength: 10 }), `git commit -m "Add a very long commit message tha…`);
     });
 
     await t.test("hard-truncates total display at maxLength", () => {
       const raw = "echo aa bb cc dd ee ff gg";
       assert.equal(formatCommand(first(raw), { maxLength: 15 }), "echo aa bb cc …");
+    });
+
+    await t.test("keeps later short tokens visible by shrinking an earlier long path", () => {
+      const raw = "git -C /Users/jdiamond/code/pi-unbash add -A";
+      assert.equal(formatCommand(first(raw), { maxLength: 40 }), "git -C /Users/jdiamond…/pi-unbash add -A");
     });
 
     await t.test("replaces newlines with ↵ before elision", () => {
@@ -46,14 +51,14 @@ test("formatCommand", async (t) => {
   });
 
   await t.test("path-aware elision", async (t) => {
-    await t.test("elides long paths individually, preserving surrounding tokens", () => {
+    await t.test("elides long paths while using the available display budget", () => {
       const raw = "git -C /Users/jdiamond/code/pi-unbash add -A";
-      assert.equal(formatCommand(first(raw), { maxLength: 40 }), "git -C /Users/…/pi-unbash add -A");
+      assert.equal(formatCommand(first(raw), { maxLength: 40 }), "git -C /Users/jdiamond…/pi-unbash add -A");
     });
 
-    await t.test("elides bare relative paths (no leading ./ or /)", () => {
+    await t.test("elides bare relative paths (no leading ./ or /) while preserving the tail", () => {
       const raw = "git add packages/tui/src/terminal.ts";
-      assert.equal(formatCommand(first(raw), { maxLength: 35 }), "git add packages/tui/…/terminal.ts");
+      assert.equal(formatCommand(first(raw), { maxLength: 35 }), "git add packages/tui/s…/terminal.ts");
     });
 
     await t.test("elides quoted paths containing $", () => {
@@ -149,9 +154,9 @@ test("formatCommand", async (t) => {
       assert.equal(formatCommand(first(raw)), `node --input-type=module <<'EOF'↵console.log("hi");↵EOF`);
     });
 
-    await t.test("elides long heredoc content at argMaxLength", () => {
+    await t.test("uses the full display budget for long heredoc content", () => {
       const raw = `bash <<EOF\n${"x".repeat(100)}\nEOF`;
-      assert.equal(formatCommand(first(raw), { maxLength: 50, argMaxLength: 20 }), `bash <<EOF↵${"x".repeat(20)}…`);
+      assert.equal(formatCommand(first(raw), { maxLength: 50, argMaxLength: 20 }), `bash <<EOF↵${"x".repeat(38)}…`);
     });
 
     await t.test("preserves <<- operator in heredoc display", () => {

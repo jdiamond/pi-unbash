@@ -17,6 +17,7 @@ All notable changes to this project will be documented in this file.
 - Increased default `commandDisplayMaxLength` from `64` to `120` and `commandDisplayArgMaxLength` from `20` to `40` for better readability on modern wide terminals.
 - Replaced prefix-based path detection with a character-composition heuristic that correctly elides bare relative paths (e.g. `packages/tui/src/terminal.ts`) and quoted paths containing `$` while leaving URLs and prose untouched.
 - Argument elision is now skipped entirely when the full command fits within `commandDisplayMaxLength`. Elision only kicks in when the total length would exceed the budget, so short commands always show their full paths.
+- When shrinking is needed, the formatter now starts from the full command and uses as much of the display budget as possible, shrinking later tokens only as much as needed instead of pre-capping every long token at `commandDisplayArgMaxLength`.
 
 ## [1.2.0] - 2026-03-12
 
