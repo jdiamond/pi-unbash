@@ -4,15 +4,17 @@ A high-security, AST-powered bash confirmation extension for the [`pi`](https://
 
 ## Why `pi-unbash`?
 
-Most bash confirmation extensions rely on simple string matching, regular expressions, or custom lexers to determine what commands an AI is trying to run. This is dangerous. If an AI generates a complex command like:
+Most bash confirmation extensions rely on simple string matching, regular expressions, or custom lexers to determine what commands an AI is trying to run. Those approaches can work for many cases, but they tend to get brittle once shell syntax becomes deeply nested or heavily composed. If an AI generates a command like:
 
 ```bash
-FOO=bar echo $(git status && `rm -rf /`)
+FOO=bar echo "$(git status && `rm -rf /`)"
 ```
 
-A regex-based checker will likely fail to detect the nested `rm` command hiding inside the subshell and backticks. 
+it is not enough to notice that the raw string contains suspicious text somewhere. The harder problem is to **comprehensively extract the embedded commands that will actually execute**, even when they are buried inside substitutions, pipelines, redirects, or control-flow syntax.
 
-**`pi-unbash` is different.** It uses [`unbash`](https://github.com/webpro/unbash), a fast, zero-dependency TypeScript parser that generates a full POSIX-compliant Abstract Syntax Tree (AST). `pi-unbash` recursively traverses this tree to extract *every single base command* being executed—no matter how deeply nested in pipes (`|`), logic gates (`&&`, `||`), or subshells (`$()`, ` `` `).
+**`pi-unbash` is different.** It uses [`unbash`](https://github.com/webpro-nl/unbash), a fast, zero-dependency TypeScript parser that generates a full POSIX-compliant Abstract Syntax Tree (AST). `pi-unbash` recursively traverses that tree to extract embedded commands no matter how complicated the full shell command becomes—across pipes (`|`), logic gates (`&&`, `||`), subshells (`$()`, `` `...` ``), heredocs, and more.
+
+That same AST also makes the approval prompt easier to read: instead of showing only the raw LLM-generated shell string, `pi-unbash` can format the extracted commands into a clearer, more compact preview that is easier to approve or reject in the terminal UI.
 
 If the AI tries to sneak an unapproved command past you, `pi-unbash` will catch it and block execution until you explicitly confirm it via the terminal UI.
 
