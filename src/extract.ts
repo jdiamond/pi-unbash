@@ -429,34 +429,50 @@ export function getCommandArgs(cmd: CommandRef): string[] {
 }
 
 /**
- * Check whether an extracted command is allowed by the allowlist.
+ * Resolve the action for a command against a rules map.
+ *
+ * Rules are evaluated in insertion order; last match wins.
+ * The special pattern "*" matches any command.
  *
  * Matching uses subsequence logic:
- * - "git" → allows all git commands (base command match)
- * - "git status" → allows `git status`, `git status --short`, etc.
- * - "git branch --show-current" → allows `git branch --show-current`,
+ * - "git" → matches all git commands (base command match)
+ * - "git status" → matches `git status`, `git status --short`, etc.
+ * - "git branch --show-current" → matches `git branch --show-current`,
  *   `git branch -v --show-current`, etc.
- * - "jira issue view" → allows `jira issue view XXX-123`, etc.
+ * - "jira issue view" → matches `jira issue view XXX-123`, etc.
  *
- * The allowlist tokens must appear in order in the actual args,
- * but extra flags or trailing positional args are permitted.
+ * The rule tokens must appear in order in the actual args,
+ * but extra flags or positional args anywhere in the sequence are permitted.
+ *
+ * Returns "ask" if no rule matches.
  */
-export function isCommandAllowed(cmd: CommandRef, allowlist: string[]): boolean {
+export function resolveCommandAction(
+  cmd: CommandRef,
+  rules: Record<string, "allow" | "ask">,
+): "allow" | "ask" {
   const name = getCommandName(cmd);
   const args = getCommandArgs(cmd);
 
-  for (const entry of allowlist) {
-    const tokens = entry.split(" ");
-    const entryName = tokens[0]!;
-    const entryArgs = tokens.slice(1);
+  let result: "allow" | "ask" = "ask";
 
-    if (entryName !== name) continue;
+  for (const [pattern, action] of Object.entries(rules)) {
+    if (pattern === "*") {
+      result = action;
+      continue;
+    }
 
-    if (entryArgs.length === 0) return true;
-    if (isSubsequence(entryArgs, args)) return true;
+    const tokens = pattern.split(" ");
+    const patternName = tokens[0]!;
+    const patternArgs = tokens.slice(1);
+
+    if (patternName !== name) continue;
+
+    if (patternArgs.length === 0 || isSubsequence(patternArgs, args)) {
+      result = action;
+    }
   }
 
-  return false;
+  return result;
 }
 
 /** Check if `needle` tokens appear in order within `haystack`. */

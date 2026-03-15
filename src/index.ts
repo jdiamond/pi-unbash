@@ -4,17 +4,17 @@ import { parse as parseBash } from "unbash";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
-import { extractAllCommandsFromAST, getCommandName, isCommandAllowed } from "./extract.ts";
+import { extractAllCommandsFromAST, getCommandName, resolveCommandAction } from "./extract.ts";
 import { formatCommand, FORMAT_COMMAND_DEFAULT_MAX_LENGTH, FORMAT_COMMAND_DEFAULT_ARG_MAX_LENGTH } from "./format.ts";
 import { buildApprovalPrompt } from "./prompt.ts";
-import { DEFAULT_ALWAYS_ALLOWED } from "./defaults.ts";
+import { DEFAULT_RULES } from "./defaults.ts";
 
 const AGENT_DIR = path.join(os.homedir(), ".pi", "agent");
 const SETTINGS_PATH = path.join(AGENT_DIR, "settings.json");
 
 interface UnbashConfig {
   enabled: boolean;
-  alwaysAllowed: string[];
+  rules: Record<string, "allow" | "ask">;
   commandDisplayMaxLength: number;
   commandDisplayArgMaxLength: number;
 }
@@ -26,23 +26,30 @@ interface LoadedConfigResult {
 
 const DEFAULT_CONFIG: UnbashConfig = {
   enabled: true,
-  alwaysAllowed: DEFAULT_ALWAYS_ALLOWED,
+  rules: {},
   commandDisplayMaxLength: FORMAT_COMMAND_DEFAULT_MAX_LENGTH,
   commandDisplayArgMaxLength: FORMAT_COMMAND_DEFAULT_ARG_MAX_LENGTH,
 };
 
 const SAFE_FALLBACK_CONFIG: UnbashConfig = {
   enabled: true,
-  alwaysAllowed: [],
+  rules: {},
   commandDisplayMaxLength: FORMAT_COMMAND_DEFAULT_MAX_LENGTH,
   commandDisplayArgMaxLength: FORMAT_COMMAND_DEFAULT_ARG_MAX_LENGTH,
 };
+
+/** Merge default rules with user rules. User rules are appended last so they win. */
+export function buildEffectiveRules(
+  userRules: Record<string, "allow" | "ask">,
+): Record<string, "allow" | "ask"> {
+  return { ...DEFAULT_RULES, ...userRules };
+}
 
 export function validateLoadedUnbashConfig(input: unknown): LoadedConfigResult {
   if (!input || typeof input !== "object") {
     return {
       config: { ...SAFE_FALLBACK_CONFIG },
-      warning: "Invalid unbash config shape; using safe fallback (enabled=true, alwaysAllowed=[]).",
+      warning: "Invalid unbash config shape; using safe fallback (enabled=true, rules={}).",
     };
   }
 
@@ -56,20 +63,25 @@ export function validateLoadedUnbashConfig(input: unknown): LoadedConfigResult {
     warnings.push("enabled must be a boolean");
   }
 
-  let alwaysAllowed = [...SAFE_FALLBACK_CONFIG.alwaysAllowed];
-  if (Array.isArray(cfg.alwaysAllowed)) {
-    const validEntries = cfg.alwaysAllowed
-      .filter((entry): entry is string => typeof entry === "string")
-      .map(entry => entry.trim())
-      .filter(entry => entry.length > 0);
-
-    if (validEntries.length !== cfg.alwaysAllowed.length) {
-      warnings.push("alwaysAllowed must contain only non-empty strings");
+  let rules: Record<string, "allow" | "ask"> = {};
+  if (cfg.rules !== undefined) {
+    if (cfg.rules && typeof cfg.rules === "object" && !Array.isArray(cfg.rules)) {
+      const validRules: Record<string, "allow" | "ask"> = {};
+      let hasInvalid = false;
+      for (const [key, value] of Object.entries(cfg.rules as Record<string, unknown>)) {
+        if (typeof key === "string" && key.trim().length > 0 && (value === "allow" || value === "ask")) {
+          validRules[key] = value;
+        } else {
+          hasInvalid = true;
+        }
+      }
+      if (hasInvalid) {
+        warnings.push('rules must be an object mapping non-empty strings to "allow" or "ask"');
+      }
+      rules = validRules;
+    } else {
+      warnings.push('rules must be an object mapping non-empty strings to "allow" or "ask"');
     }
-
-    alwaysAllowed = validEntries;
-  } else if (cfg.alwaysAllowed !== undefined) {
-    warnings.push("alwaysAllowed must be a string[]");
   }
 
   let commandDisplayMaxLength = SAFE_FALLBACK_CONFIG.commandDisplayMaxLength;
@@ -88,12 +100,12 @@ export function validateLoadedUnbashConfig(input: unknown): LoadedConfigResult {
 
   if (warnings.length > 0) {
     return {
-      config: { enabled, alwaysAllowed, commandDisplayMaxLength, commandDisplayArgMaxLength },
+      config: { enabled, rules, commandDisplayMaxLength, commandDisplayArgMaxLength },
       warning: `Invalid unbash config fields (${warnings.join("; ")}); using safe values for invalid fields.`,
     };
   }
 
-  return { config: { enabled, alwaysAllowed, commandDisplayMaxLength, commandDisplayArgMaxLength } };
+  return { config: { enabled, rules, commandDisplayMaxLength, commandDisplayArgMaxLength } };
 }
 
 export function getUnbashConfigFromSettings(input: unknown): LoadedConfigResult {
@@ -103,7 +115,6 @@ export function getUnbashConfigFromSettings(input: unknown): LoadedConfigResult 
 
   const settings = input as Record<string, unknown>;
 
-  // Fallback to defaults if the "unbash" key doesn't exist yet.
   if (!Object.hasOwn(settings, "unbash")) {
     return { config: DEFAULT_CONFIG };
   }
@@ -120,7 +131,7 @@ function loadConfig(): LoadedConfigResult {
     } catch (e) {
       return {
         config: { ...SAFE_FALLBACK_CONFIG },
-        warning: "Failed to parse settings.json; using safe fallback (enabled=true, alwaysAllowed=[]).",
+        warning: "Failed to parse settings.json; using safe fallback (enabled=true, rules={}).",
       };
     }
   }
@@ -136,8 +147,13 @@ function saveConfig(config: UnbashConfig) {
       settings = JSON.parse(fs.readFileSync(SETTINGS_PATH, "utf-8"));
     }
 
-    // Mutate only our namespace
-    settings.unbash = config;
+    // Only save user rules, never the merged effective set
+    settings.unbash = {
+      enabled: config.enabled,
+      rules: config.rules,
+      ...(config.commandDisplayMaxLength !== FORMAT_COMMAND_DEFAULT_MAX_LENGTH && { commandDisplayMaxLength: config.commandDisplayMaxLength }),
+      ...(config.commandDisplayArgMaxLength !== FORMAT_COMMAND_DEFAULT_ARG_MAX_LENGTH && { commandDisplayArgMaxLength: config.commandDisplayArgMaxLength }),
+    };
 
     fs.writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2), "utf-8");
   } catch (e) {
@@ -177,35 +193,32 @@ export default function (pi: ExtensionAPI) {
       const { action, target } = parseUnbashArgs(args);
 
       if (action === "allow" && target) {
-        if (!config.alwaysAllowed.includes(target)) {
-          config.alwaysAllowed.push(target);
-          saveConfig(config);
-          ctx.ui.notify(`'${target}' added to allowed commands.`, "info");
-        } else {
-          ctx.ui.notify(`'${target}' is already allowed.`, "info");
-        }
-      } else if (action === "deny" && target) {
-        config.alwaysAllowed = config.alwaysAllowed.filter(c => c !== target);
+        config.rules[target] = "allow";
         saveConfig(config);
-        ctx.ui.notify(`'${target}' removed from allowed commands.`, "info");
+        ctx.ui.notify(`'${target}' added to allowed commands.`, "info");
       } else if (action === "toggle") {
         config.enabled = !config.enabled;
         saveConfig(config);
         ctx.ui.notify(`pi-unbash is now ${config.enabled ? "ENABLED" : "DISABLED"}`, "info");
       } else if (action === "list") {
-        const allowedList = config.alwaysAllowed.length > 0
-          ? config.alwaysAllowed.map(command => `- ${command}`).join("\n")
-          : "(none)";
+        const defaultLines = Object.entries(DEFAULT_RULES)
+          .map(([pattern, act]) => `  ${pattern}: ${act}`)
+          .join("\n");
+
+        const userLines = Object.entries(config.rules).length > 0
+          ? Object.entries(config.rules).map(([pattern, act]) => `  ${pattern}: ${act}`).join("\n")
+          : "  (none)";
+
         const sessionList = sessionAllowed.length > 0
-          ? sessionAllowed.map(command => `- ${command}`).join("\n")
-          : "(none)";
+          ? sessionAllowed.map(command => `  ${command}`).join("\n")
+          : "  (none)";
 
         ctx.ui.notify(
-          `pi-unbash: ${config.enabled ? "ENABLED" : "DISABLED"}\nAllowed commands:\n${allowedList}\nSession-allowed commands:\n${sessionList}`,
+          `pi-unbash: ${config.enabled ? "ENABLED" : "DISABLED"}\n\nDefault rules:\n${defaultLines}\n\nUser rules:\n${userLines}\n\nSession-allowed:\n${sessionList}`,
           "info"
         );
       } else {
-        ctx.ui.notify("Usage: /unbash <allow|deny|toggle|list> [command]", "warning");
+        ctx.ui.notify("Usage: /unbash <allow|toggle|list> [command]", "warning");
       }
     }
   });
@@ -263,17 +276,18 @@ export default function (pi: ExtensionAPI) {
       return;
     }
 
-    // Extract EVERY command in the tree (including pipes, gates, subshells)
     const allCommands = extractAllCommandsFromAST(ast, rawCmd);
 
     if (allCommands.length === 0) return;
 
-    // Find all commands that are NOT in the allow list or session list
+    const effectiveRules = buildEffectiveRules(config.rules);
+
     const unauthorizedCommands = allCommands.filter(
-      cmd => !isCommandAllowed(cmd, config.alwaysAllowed) && !isCommandAllowed(cmd, sessionAllowed)
+      cmd =>
+        resolveCommandAction(cmd, effectiveRules) !== "allow" &&
+        !sessionAllowed.includes(getCommandName(cmd))
     );
 
-    // If every single extracted command is in the allow-list, let it pass silently!
     if (unauthorizedCommands.length === 0) {
       return;
     }

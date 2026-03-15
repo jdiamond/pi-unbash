@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { getUnbashConfigFromSettings, validateLoadedUnbashConfig } from "../src/index.ts";
 import { FORMAT_COMMAND_DEFAULT_MAX_LENGTH, FORMAT_COMMAND_DEFAULT_ARG_MAX_LENGTH } from "../src/format.ts";
-import { DEFAULT_ALWAYS_ALLOWED } from "../src/defaults.ts";
+import { DEFAULT_RULES } from "../src/defaults.ts";
 
 const displayDefaults = {
   commandDisplayMaxLength: FORMAT_COMMAND_DEFAULT_MAX_LENGTH,
@@ -10,47 +10,58 @@ const displayDefaults = {
 };
 
 test("validateLoadedUnbashConfig", async (t) => {
-  await t.test("accepts valid config", () => {
-    const result = validateLoadedUnbashConfig({ enabled: false, alwaysAllowed: ["git", "git status"] });
-    assert.deepEqual(result.config, { enabled: false, alwaysAllowed: ["git", "git status"], ...displayDefaults });
+  await t.test("accepts valid config with rules", () => {
+    const result = validateLoadedUnbashConfig({ enabled: false, rules: { "git": "allow", "curl": "ask" } });
+    assert.deepEqual(result.config, { enabled: false, rules: { "git": "allow", "curl": "ask" }, ...displayDefaults });
+    assert.equal(result.warning, undefined);
+  });
+
+  await t.test("accepts valid config with empty rules", () => {
+    const result = validateLoadedUnbashConfig({ enabled: true, rules: {} });
+    assert.deepEqual(result.config, { enabled: true, rules: {}, ...displayDefaults });
+    assert.equal(result.warning, undefined);
+  });
+
+  await t.test("accepts valid config with no rules field", () => {
+    const result = validateLoadedUnbashConfig({ enabled: true });
+    assert.deepEqual(result.config, { enabled: true, rules: {}, ...displayDefaults });
     assert.equal(result.warning, undefined);
   });
 
   await t.test("uses safe fallback for invalid top-level shape", () => {
     const result = validateLoadedUnbashConfig("bad");
-    assert.deepEqual(result.config, { enabled: true, alwaysAllowed: [], ...displayDefaults });
+    assert.deepEqual(result.config, { enabled: true, rules: {}, ...displayDefaults });
     assert.ok(result.warning);
   });
 
-  await t.test("recovers valid enabled when alwaysAllowed is invalid", () => {
-    const result = validateLoadedUnbashConfig({ enabled: false, alwaysAllowed: 42 });
-    assert.deepEqual(result.config, { enabled: false, alwaysAllowed: [], ...displayDefaults });
-    assert.ok(result.warning?.includes("alwaysAllowed"));
+  await t.test("recovers valid enabled when rules is invalid", () => {
+    const result = validateLoadedUnbashConfig({ enabled: false, rules: 42 });
+    assert.deepEqual(result.config, { enabled: false, rules: {}, ...displayDefaults });
+    assert.ok(result.warning?.includes("rules"));
   });
 
-  await t.test("recovers valid alwaysAllowed entries and drops invalid ones", () => {
+  await t.test("drops invalid rules entries and keeps valid ones", () => {
     const result = validateLoadedUnbashConfig({
       enabled: true,
-      alwaysAllowed: ["git", "   ", 123, "git status"],
+      rules: { "git": "allow", "curl": "deny", "ls": 123, "": "allow", "rg": "ask" },
     });
-
     assert.deepEqual(result.config, {
       enabled: true,
-      alwaysAllowed: ["git", "git status"],
+      rules: { "git": "allow", "rg": "ask" },
       ...displayDefaults,
     });
-    assert.ok(result.warning?.includes("alwaysAllowed"));
+    assert.ok(result.warning?.includes("rules"));
   });
 
   await t.test("accepts custom display settings", () => {
-    const result = validateLoadedUnbashConfig({ enabled: true, alwaysAllowed: [], commandDisplayMaxLength: 80, commandDisplayArgMaxLength: 30 });
+    const result = validateLoadedUnbashConfig({ enabled: true, rules: {}, commandDisplayMaxLength: 80, commandDisplayArgMaxLength: 30 });
     assert.equal(result.config.commandDisplayMaxLength, 80);
     assert.equal(result.config.commandDisplayArgMaxLength, 30);
     assert.equal(result.warning, undefined);
   });
 
   await t.test("rejects invalid display settings", () => {
-    const result = validateLoadedUnbashConfig({ enabled: true, alwaysAllowed: [], commandDisplayMaxLength: "big", commandDisplayArgMaxLength: -1 });
+    const result = validateLoadedUnbashConfig({ enabled: true, rules: {}, commandDisplayMaxLength: "big", commandDisplayArgMaxLength: -1 });
     assert.equal(result.config.commandDisplayMaxLength, FORMAT_COMMAND_DEFAULT_MAX_LENGTH);
     assert.equal(result.config.commandDisplayArgMaxLength, FORMAT_COMMAND_DEFAULT_ARG_MAX_LENGTH);
     assert.ok(result.warning);
@@ -58,15 +69,32 @@ test("validateLoadedUnbashConfig", async (t) => {
 });
 
 test("getUnbashConfigFromSettings", async (t) => {
-  await t.test("uses defaults when the unbash key is missing", () => {
+  await t.test("uses empty rules when the unbash key is missing", () => {
     const result = getUnbashConfigFromSettings({ other: true });
-    assert.deepEqual(result.config, { enabled: true, alwaysAllowed: DEFAULT_ALWAYS_ALLOWED, ...displayDefaults });
+    assert.deepEqual(result.config, { enabled: true, rules: {}, ...displayDefaults });
     assert.equal(result.warning, undefined);
   });
 
   await t.test("validates a falsey unbash value instead of falling back to defaults", () => {
     const result = getUnbashConfigFromSettings({ unbash: null });
-    assert.deepEqual(result.config, { enabled: true, alwaysAllowed: [], ...displayDefaults });
+    assert.deepEqual(result.config, { enabled: true, rules: {}, ...displayDefaults });
     assert.ok(result.warning);
+  });
+});
+
+test("DEFAULT_RULES", async (t) => {
+  await t.test("all values are allow or ask", () => {
+    for (const [pattern, action] of Object.entries(DEFAULT_RULES)) {
+      assert.ok(
+        action === "allow" || action === "ask",
+        `DEFAULT_RULES["${pattern}"] has invalid action "${action}"`,
+      );
+    }
+  });
+
+  await t.test("all patterns are non-empty strings", () => {
+    for (const pattern of Object.keys(DEFAULT_RULES)) {
+      assert.ok(pattern.trim().length > 0, `DEFAULT_RULES has empty pattern`);
+    }
   });
 });

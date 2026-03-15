@@ -1,12 +1,37 @@
-export const DEFAULT_ALWAYS_ALLOWED: string[] = [
+export const DEFAULT_RULES: Record<string, "allow" | "ask"> = {
   // Basic read-only utilities
-  "cat", "cd", "echo", "find", "grep", "head", "ls", "pwd", "rg", "sort", "tail", "true", "uniq", "wc",
+  "cat": "allow",
+  "cd": "allow",
+  "echo": "allow",
+  "find": "allow",
+  "grep": "allow",
+  "head": "allow",
+  "ls": "allow",
+  "pwd": "allow",
+  "rg": "allow",
+  "sort": "allow",
+  "tail": "allow",
+  "true": "allow",
+  "uniq": "allow",
+  "wc": "allow",
   // Path utilities
-  "basename", "dirname", "realpath",
+  "basename": "allow",
+  "dirname": "allow",
+  "realpath": "allow",
   // System info
-  "date", "file", "stat", "uname", "whoami",
+  "date": "allow",
+  "file": "allow",
+  "stat": "allow",
+  "uname": "allow",
+  "whoami": "allow",
   // Tool discovery
-  "type", "which",
+  "type": "allow",
+  "which": "allow",
   // Read-only git
-  "git blame", "git branch --show-current", "git diff", "git log", "git show", "git status",
-];
+  "git blame": "allow",
+  "git branch --show-current": "allow",
+  "git diff": "allow",
+  "git log": "allow",
+  "git show": "allow",
+  "git status": "allow",
+};

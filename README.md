@@ -61,47 +61,51 @@ Settings are persisted globally in `~/.pi/agent/settings.json` under the `"unbas
   ],
   "unbash": {
     "enabled": true,
-    "alwaysAllowed": [
-      "ls",
-      "pwd",
-      "cd",
-      "cat",
-      "echo",
-      "grep",
-      "find",
-      "git"
-    ]
+    "rules": {
+      "npm test": "allow"
+    }
   }
 }
 ```
 
-### Allowlist
+### Rules
 
-The `alwaysAllowed` setting controls which commands pass silently. You can allow a base command (all subcommands), or a specific subcommand (only matching invocations):
+The `rules` object maps command patterns to actions. Only your personal overrides go here — the built-in defaults (see [`src/defaults.ts`](src/defaults.ts)) are always applied first and never written to disk, so you automatically benefit from future default updates.
+
+Rules are evaluated in order: built-in defaults first, then your `rules` entries, **last match wins**. This means entries later in your `rules` object override earlier ones and override any matching default.
+
+Actions:
+- `"allow"` — run silently without prompting
+- `"ask"` — prompt for approval (the default for anything unmatched)
+
+The special pattern `"*"` matches any command:
+- `"*": "allow"` — trust all commands globally (opt out of pi-unbash)
+
+Matching uses **subsequence logic** — the tokens in your rule must appear in order in the actual command, but extra flags and arguments anywhere in the sequence are permitted:
+
+| Rule | Matches | Doesn't Match |
+|------|---------|---------------|
+| `"git"` | all git commands | — |
+| `"git status"` | `git status`, `git status --short` | `git commit -m "msg"` |
+| `"git branch --show-current"` | `git branch --show-current`, `git branch -v --show-current` | `git branch -D main` |
+| `"jira issue view"` | `jira issue view PROJ-123`, `jira issue view --verbose PROJ-123` | `jira issue create` |
+| `"terraform apply --dry-run"` | `terraform apply --dry-run`, `terraform apply -v --dry-run` | `terraform apply`, `terraform apply --force` |
+
+Because last-match-wins, you can override a broad default with a narrower rule:
 
 ```json
 {
   "unbash": {
-    "alwaysAllowed": [
-      "ls", "pwd", "cd", "cat", "echo", "grep", "find",
-      "git status",
-      "git log",
-      "git diff",
-      "jira issue view",
-      "git branch --show-current"
-    ]
+    "rules": {
+      "npm test": "allow",
+      "git": "allow",
+      "git push": "ask"
+    }
   }
 }
 ```
 
-Matching uses **subsequence logic** — the tokens in your allowlist entry must appear in order in the actual command, but extra flags and trailing arguments are permitted:
-
-| Allowlist Entry | Matches | Doesn't Match |
-|----------------|---------|---------------|
-| `git` | all git commands | — |
-| `git status` | `git status`, `git status --short` | `git commit -m "msg"` |
-| `git branch --show-current` | `git branch --show-current`, `git branch -v --show-current` | `git branch -D main` |
-| `jira issue view` | `jira issue view PROJ-123`, `jira issue view --verbose PROJ-123` | `jira issue create` |
+Here `git push` always prompts even though `git` (which would match all git commands) appears before it — the more specific entry comes last and wins.
 
 ### Display Settings
 
@@ -132,9 +136,8 @@ The confirmation prompt elides long command arguments to keep the display readab
 You can manage settings dynamically mid-session using the `/unbash` command:
 
 * `/unbash allow <command>` - Permanently allow a command (e.g., `/unbash allow git` or `/unbash allow git status`)
-* `/unbash deny <command>` - Remove a command from the allowed list (e.g., `/unbash deny git status`)
 * `/unbash toggle` - Turn the entire confirmation system on or off
-* `/unbash list` - Show current status, allowed commands, and session-allowed commands
+* `/unbash list` - Show current status, default rules, and user rules
 
 ## License
 

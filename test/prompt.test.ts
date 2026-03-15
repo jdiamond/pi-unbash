@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parse as parseBash } from "unbash";
-import { extractAllCommandsFromAST, isCommandAllowed } from "../src/extract.ts";
+import { extractAllCommandsFromAST, resolveCommandAction } from "../src/extract.ts";
 import { buildApprovalPrompt } from "../src/prompt.ts";
 
 function extract(raw: string) {
@@ -11,7 +11,7 @@ function extract(raw: string) {
 test("buildApprovalPrompt", async (t) => {
   await t.test("shows allowed commands for context alongside unapproved ones", () => {
     const commands = extract("cd /Users/jdiamond/code/pi-nudge && npx tsc --noEmit 2>&1");
-    const unauthorized = commands.filter(cmd => !isCommandAllowed(cmd, ["cd"]));
+    const unauthorized = commands.filter(cmd => resolveCommandAction(cmd, { "cd": "allow" }) !== "allow");
 
     assert.equal(
       buildApprovalPrompt(commands, unauthorized, { maxLength: 40, argMaxLength: 40 }),
@@ -26,7 +26,7 @@ test("buildApprovalPrompt", async (t) => {
 
   await t.test("preserves command order and does not deduplicate entries", () => {
     const commands = extract("echo ok && npm test && npm test");
-    const unauthorized = commands.filter(cmd => !isCommandAllowed(cmd, ["echo"]));
+    const unauthorized = commands.filter(cmd => resolveCommandAction(cmd, { "echo": "allow" }) !== "allow");
 
     assert.equal(
       buildApprovalPrompt(commands, unauthorized, { maxLength: 200, argMaxLength: 200 }),
