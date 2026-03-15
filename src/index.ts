@@ -231,6 +231,7 @@ export default function (pi: ExtensionAPI) {
         return { block: true, reason: "Failed to parse bash AST. Command rejected for safety." };
       }
 
+      pi.events.emit("nudge", { body: "Command needs approval" });
       const confirmed = await ctx.ui.confirm(
         "⚠️ Could Not Parse Command Safely",
         "\nAllow anyway?"
@@ -249,6 +250,7 @@ export default function (pi: ExtensionAPI) {
       }
 
       const firstError = ast.errors[0] ?? { message: "unknown parse error", pos: -1 };
+      pi.events.emit("nudge", { body: "Command needs approval" });
       const confirmed = await ctx.ui.confirm(
         "⚠️ Command Parsed With Errors",
         `\nFirst error: ${firstError.message} at ${firstError.pos}\n\nAllow anyway?`
@@ -286,6 +288,7 @@ export default function (pi: ExtensionAPI) {
     const uniqueBaseNames = Array.from(new Set(unauthorizedCommands.map(getCommandName)));
     const alwaysLabel = `Always allow ${uniqueBaseNames.join(", ")} (this session)`;
 
+    pi.events.emit("nudge", { body: "Command needs approval" });
     const choice = await ctx.ui.select(
       buildApprovalPrompt(allCommands, unauthorizedCommands, {
         maxLength: config.commandDisplayMaxLength,

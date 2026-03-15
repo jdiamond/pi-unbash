@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- Emits a `nudge` event via `pi.events` before each approval prompt so extensions like [`pi-nudge`](https://github.com/jdiamond/pi-nudge) can send a native notification when a command needs approval.
+
 ### Changed
 - Approval prompts now show the full extracted command sequence with status markers: `✔` for commands already allowed and `✖` for commands that still need approval. This preserves context for compound shell commands like `cd /path && npx tsc --noEmit` while keeping attention on the unapproved steps.
 
