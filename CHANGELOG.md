@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-03-15
+
 ### Added
 - Heredoc content is now shown inline in the approval prompt (e.g. `bash <<EOF↵echo hi↵EOF`), with newlines replaced by `↵`, content elided at `commandDisplayArgMaxLength` if too long, and the closing marker shown when it fits.
 
