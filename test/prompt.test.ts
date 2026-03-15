@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parse as parseBash } from "unbash";
-import { extractAllCommandsFromAST, resolveCommandAction } from "../src/extract.ts";
+import { extractAllCommandsFromAST } from "../src/extract.ts";
+import { resolveCommandAction } from "../src/resolve.ts";
 import { buildApprovalPrompt } from "../src/prompt.ts";
 
 function extract(raw: string) {
