@@ -39,11 +39,12 @@ const SAFE_FALLBACK_CONFIG: UnbashConfig = {
   commandDisplayArgMaxLength: FORMAT_COMMAND_DEFAULT_ARG_MAX_LENGTH,
 };
 
-/** Merge default rules with user rules. User rules are appended last so they win. */
+/** Merge default, user, and session rules. Later layers win. */
 export function buildEffectiveRules(
   userRules: Record<string, "allow" | "ask">,
+  sessionRules: Record<string, "allow" | "ask">,
 ): Record<string, "allow" | "ask"> {
-  return { ...DEFAULT_RULES, ...userRules };
+  return { ...DEFAULT_RULES, ...userRules, ...sessionRules };
 }
 
 export function validateLoadedUnbashConfig(input: unknown): LoadedConfigResult {
@@ -176,7 +177,7 @@ export default function (pi: ExtensionAPI) {
   const loaded = loadConfig();
   let config = loaded.config;
   let configWarning = loaded.warning;
-  const sessionAllowed: string[] = [];
+  const sessionRules: Record<string, "allow" | "ask"> = {};
 
   if (configWarning) {
     console.warn(`[pi-unbash] ${configWarning}`);
@@ -210,12 +211,12 @@ export default function (pi: ExtensionAPI) {
           ? Object.entries(config.rules).map(([pattern, act]) => `  ${pattern}: ${act}`).join("\n")
           : "  (none)";
 
-        const sessionList = sessionAllowed.length > 0
-          ? sessionAllowed.map(command => `  ${command}`).join("\n")
+        const sessionLines = Object.entries(sessionRules).length > 0
+          ? Object.entries(sessionRules).map(([pattern, act]) => `  ${pattern}: ${act}`).join("\n")
           : "  (none)";
 
         ctx.ui.notify(
-          `pi-unbash: ${config.enabled ? "ENABLED" : "DISABLED"}\n\nDefault rules:\n${defaultLines}\n\nUser rules:\n${userLines}\n\nSession-allowed:\n${sessionList}`,
+          `pi-unbash: ${config.enabled ? "ENABLED" : "DISABLED"}\n\nDefault rules:\n${defaultLines}\n\nUser rules:\n${userLines}\n\nSession rules:\n${sessionLines}`,
           "info"
         );
       } else {
@@ -281,12 +282,10 @@ export default function (pi: ExtensionAPI) {
 
     if (allCommands.length === 0) return;
 
-    const effectiveRules = buildEffectiveRules(config.rules);
+    const effectiveRules = buildEffectiveRules(config.rules, sessionRules);
 
     const unauthorizedCommands = allCommands.filter(
-      cmd =>
-        resolveCommandAction(cmd, effectiveRules) !== "allow" &&
-        !sessionAllowed.includes(getCommandName(cmd))
+      cmd => resolveCommandAction(cmd, effectiveRules) !== "allow"
     );
 
     if (unauthorizedCommands.length === 0) {
@@ -314,9 +313,7 @@ export default function (pi: ExtensionAPI) {
 
     if (choice === alwaysLabel) {
       for (const name of uniqueBaseNames) {
-        if (!sessionAllowed.includes(name)) {
-          sessionAllowed.push(name);
-        }
+        sessionRules[name] = "allow";
       }
       return;
     }

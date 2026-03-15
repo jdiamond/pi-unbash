@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { getUnbashConfigFromSettings, validateLoadedUnbashConfig } from "../src/index.ts";
+import { getUnbashConfigFromSettings, validateLoadedUnbashConfig, buildEffectiveRules } from "../src/index.ts";
 import { FORMAT_COMMAND_DEFAULT_MAX_LENGTH, FORMAT_COMMAND_DEFAULT_ARG_MAX_LENGTH } from "../src/format.ts";
 import { DEFAULT_RULES } from "../src/defaults.ts";
 
@@ -96,5 +96,43 @@ test("DEFAULT_RULES", async (t) => {
     for (const pattern of Object.keys(DEFAULT_RULES)) {
       assert.ok(pattern.trim().length > 0, `DEFAULT_RULES has empty pattern`);
     }
+  });
+});
+
+test("buildEffectiveRules", async (t) => {
+  await t.test("defaults alone when user and session rules are empty", () => {
+    const result = buildEffectiveRules({}, {});
+    assert.deepEqual(result, DEFAULT_RULES);
+  });
+
+  await t.test("user rules are appended after defaults", () => {
+    const result = buildEffectiveRules({ "mytool": "allow" }, {});
+    assert.equal(result["mytool"], "allow");
+    assert.equal(result["cat"], "allow");
+  });
+
+  await t.test("user rules override defaults for the same pattern", () => {
+    const result = buildEffectiveRules({ "cat": "ask" }, {});
+    assert.equal(result["cat"], "ask");
+  });
+
+  await t.test("session rules are appended after user rules", () => {
+    const result = buildEffectiveRules({}, { "docker": "allow" });
+    assert.equal(result["docker"], "allow");
+  });
+
+  await t.test("session rules override user rules for the same pattern", () => {
+    const result = buildEffectiveRules({ "npm": "ask" }, { "npm": "allow" });
+    assert.equal(result["npm"], "allow");
+  });
+
+  await t.test("session rules override defaults for the same pattern", () => {
+    const result = buildEffectiveRules({}, { "cat": "ask" });
+    assert.equal(result["cat"], "ask");
+  });
+
+  await t.test("all three layers merge in order", () => {
+    const result = buildEffectiveRules({ "git": "ask" }, { "git": "allow" });
+    assert.equal(result["git"], "allow");
   });
 });
