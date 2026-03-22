@@ -35,7 +35,7 @@
     ]
   },
   "dependencies": {
-    "unbash": "^2.2.0"
+    "unbash": "jdiamond/unbash#arith-cmd-subst"
   },
   "peerDependencies": {
     "@mariozechner/pi-coding-agent": "*"

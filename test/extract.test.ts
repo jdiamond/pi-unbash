@@ -147,5 +147,25 @@ test("extractAllCommandsFromAST", async (t) => {
     ]);
   });
 
+  await t.test("extracts commands from arithmetic expansion", () => {
+    assert.deepEqual(summarize("echo $(( $(npm --version) + 1 ))"), [
+      { name: "echo", args: ["$(( $(npm --version) + 1 ))"] },
+      { name: "npm", args: ["--version"] },
+    ]);
+  });
+
+  await t.test("extracts commands from arithmetic command", () => {
+    assert.deepEqual(summarize("(( $(curl http://example.com) + 1 ))"), [
+      { name: "curl", args: ["http://example.com"] },
+    ]);
+  });
+
+  await t.test("extracts commands from arithmetic expansion inside double quotes", () => {
+    assert.deepEqual(summarize('echo "$(( $(rm -rf /) + 1 ))"'), [
+      { name: "echo", args: ["$(( $(rm -rf /) + 1 ))"] },
+      { name: "rm", args: ["-rf", "/"] },
+    ]);
+  });
+
 });
 

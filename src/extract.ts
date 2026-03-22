@@ -1,5 +1,6 @@
 import { parse as parseBash } from "unbash";
 import type {
+  ArithmeticExpansionPart,
   ArithmeticExpression,
   AssignmentPrefix,
   Command,
@@ -320,6 +321,10 @@ function collectWordPart(
       collectParameterExpansion(part, source, commands);
       return;
 
+    case "ArithmeticExpansion":
+      collectArithmeticExpression(part.expression, source, commands);
+      return;
+
     default:
       return;
   }
@@ -415,8 +420,148 @@ function collectArithmeticExpression(expr: ArithmeticExpression | undefined, sou
     case "ArithmeticGroup":
       collectArithmeticExpression(expr.expression, source, commands);
       return;
+    case "ArithmeticCommandExpansion":
+      if (expr.script) {
+        // Extract inner source from text like "$(cmd)" -> "cmd"
+        const innerSource = expr.text.startsWith("$(") && expr.text.endsWith(")")
+          ? expr.text.slice(2, -1)
+          : expr.text;
+        collectNode(expr.script, innerSource, commands);
+      } else if (expr.inner) {
+        // Parse the inner text and collect commands (for double-quoted context)
+        const innerAst = parseBash(expr.inner);
+        collectArithmeticCommands(innerAst, expr.inner, commands);
+      }
+      return;
     case "ArithmeticWord":
       return;
   }
+}
+
+function collectArithmeticCommands(node: Script | Node | undefined, source: string, commands: CommandRef[]) {
+  if (!node) return;
+
+  switch (node.type) {
+    case "Script":
+    case "AndOr":
+    case "Pipeline":
+    case "CompoundList":
+      for (const child of node.commands) {
+        collectArithmeticCommands(child, source, commands);
+      }
+      return;
+
+    case "Statement":
+      collectArithmeticCommands(node.command, source, commands);
+      for (const redirect of node.redirects) {
+        collectArithmeticRedirect(redirect, source, commands);
+      }
+      return;
+
+    case "Command":
+      if (node.name) {
+        commands.push({ node, source });
+      }
+      for (const prefix of node.prefix) {
+        collectAssignment(prefix, source, commands);
+      }
+      for (const word of node.suffix) {
+        collectWord(word, source, commands);
+      }
+      for (const redirect of node.redirects) {
+        collectArithmeticRedirect(redirect, source, commands);
+      }
+      return;
+
+    case "Subshell":
+    case "BraceGroup":
+      collectArithmeticCommands(node.body, source, commands);
+      return;
+
+    case "If":
+      collectArithmeticCommands(node.clause, source, commands);
+      collectArithmeticCommands(node.then, source, commands);
+      if (node.else) collectArithmeticCommands(node.else, source, commands);
+      return;
+
+    case "While":
+      collectArithmeticCommands(node.clause, source, commands);
+      collectArithmeticCommands(node.body, source, commands);
+      return;
+
+    case "For":
+      collectWord(node.name, source, commands);
+      for (const word of node.wordlist) {
+        collectWord(word, source, commands);
+      }
+      collectArithmeticCommands(node.body, source, commands);
+      return;
+
+    case "Select":
+      collectWord(node.name, source, commands);
+      for (const word of node.wordlist) {
+        collectWord(word, source, commands);
+      }
+      collectArithmeticCommands(node.body, source, commands);
+      return;
+
+    case "Case":
+      collectWord(node.word, source, commands);
+      for (const item of node.items) {
+        collectArithmeticCaseItem(item, source, commands);
+      }
+      return;
+
+    case "Function":
+      collectWord(node.name, source, commands);
+      collectArithmeticCommands(node.body, source, commands);
+      for (const redirect of node.redirects) {
+        collectArithmeticRedirect(redirect, source, commands);
+      }
+      return;
+
+    case "Coproc":
+      if (node.name) collectWord(node.name, source, commands);
+      collectArithmeticCommands(node.body, source, commands);
+      for (const redirect of node.redirects) {
+        collectArithmeticRedirect(redirect, source, commands);
+      }
+      return;
+
+    case "TestCommand":
+      collectTestExpression(node.expression, source, commands);
+      return;
+
+    case "ArithmeticFor":
+      collectArithmeticExpression(node.initialize, source, commands);
+      collectArithmeticExpression(node.test, source, commands);
+      collectArithmeticExpression(node.update, source, commands);
+      collectArithmeticCommands(node.body, source, commands);
+      return;
+
+    case "ArithmeticCommand":
+      collectArithmeticExpression(node.expression, source, commands);
+      return;
+  }
+}
+
+function collectArithmeticRedirect(redirect: Redirect, source: string, commands: CommandRef[]) {
+  if (redirect.target) {
+    collectWord(redirect.target, source, commands);
+  }
+  if (redirect.body?.parts) {
+    collectWord(redirect.body, source, commands);
+    return;
+  }
+  if (redirect.content && redirect.heredocQuoted !== true) {
+    collectCommandsFromShellText(redirect.content, commands);
+  }
+}
+
+function collectArithmeticCaseItem(item: { pattern: Word[]; body: Node }, source: string, commands: CommandRef[]) {
+  for (const pattern of item.pattern) {
+    collectWord(pattern, source, commands);
+  }
+  collectArithmeticCommands(item.body, source, commands);
 }
 

@@ -174,4 +174,34 @@ test("formatCommand", async (t) => {
       assert.equal(formatCommand(first(raw)), "cmd >out.txt <<EOF↵hello↵EOF");
     });
   });
+
+  await t.test("commands inside arithmetic", async (t) => {
+    await t.test("extracts and formats command inside arithmetic expansion", () => {
+      const raw = "echo $(( $(npm --version) + 1 ))";
+      const commands = displays(raw);
+      assert.equal(commands[0], "echo $(( $(npm --version) + 1 ))");
+      assert.equal(commands[1], "npm --version");
+    });
+
+    await t.test("extracts and formats command inside arithmetic expansion with pipe", () => {
+      const raw = "echo $(( $(npm --version | tr -d '.') + 1 ))";
+      const commands = displays(raw);
+      assert.equal(commands[0], "echo $(( $(npm --version | tr -d '.') + 1 ))");
+      assert.equal(commands[1], "npm --version");
+      assert.equal(commands[2], "tr -d '.'");
+    });
+
+    await t.test("extracts and formats command inside arithmetic expansion within double quotes", () => {
+      const raw = 'echo "$(( $(rm -rf /) + 1 ))"';
+      const commands = displays(raw);
+      assert.equal(commands[0], 'echo "$(( $(rm -rf /) + 1 ))"');
+      assert.equal(commands[1], "rm -rf /");
+    });
+
+    await t.test("extracts and formats command inside arithmetic command", () => {
+      const raw = "(( $(curl http://example.com) + 1 ))";
+      const commands = displays(raw);
+      assert.equal(commands[0], "curl http://example.com");
+    });
+  });
 });
