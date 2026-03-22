@@ -28,15 +28,22 @@ or `false`, `0`, `""`, etc., this branch is skipped and `loadConfig()` returns `
 ---
 
 ### 2. Command substitutions inside arithmetic are currently missed
-**Status:** deferred for now.
+**Status:** ✅ fixed.
 
-This appears to be an upstream `unbash` limitation rather than just a local traversal bug. I opened an upstream issue to discuss fixing the arithmetic AST shape there first:
+This appeared to be an upstream `unbash` limitation. Upstream issue:
 
 - `webpro-nl/unbash#1` — _Command substitutions inside arithmetic are not represented structurally in the AST_
 
-For now, skip this item locally and revisit after upstream feedback.
+**What we did:**
+- Updated unbash dependency to `jdiamond/unbash#arith-cmd-subst` (fork with the fix)
+- Added `ArithmeticExpansion` case in `collectWordPart()` to traverse into arithmetic expressions
+- Added `ArithmeticCommandExpansion` case in `collectArithmeticExpression()` to extract embedded commands
+- Handled both `script` (unquoted arithmetic) and `inner` (double-quoted arithmetic) paths
+- Added `collectArithmeticCommands()` for arithmetic contexts where commands ARE executed (unlike heredoc plain text)
+- Fixed source string handling so `formatCommand()` displays commands correctly
+- Added tests for extraction and formatting
 
-**Reminder:** once the upstream `unbash` issue is addressed, come back and update `pi-unbash` to use the improved arithmetic AST instead of relying on the current gap/deferral.
+**Follow-up:** Once upstream PR is merged, switch from fork back to npm release and update dependency.
 
 ---
 
@@ -123,9 +130,9 @@ That means `/unbash allow`, `/unbash deny`, `/unbash toggle` can appear to work 
 ## What to tackle first
 
 1. Fix falsey config handling in `loadConfig()`
-2. Close arithmetic substitution gap
-3. Close unquoted heredoc gap
-4. Add tests for those three immediately
+2. ~~Close arithmetic substitution gap~~ ✅ done
+3. ~~Close unquoted heredoc gap~~ (already fixed)
+4. Add tests for config handling
 
 ## Nice simplifications
 

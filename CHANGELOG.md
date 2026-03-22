@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 - Emits a `nudge` event via `pi.events` before each approval prompt so extensions like [`pi-nudge`](https://github.com/jdiamond/pi-nudge) can send a native notification when a command needs approval.
 - Project-level settings from `.pi/settings.json` — rules merge in order: defaults → global → project → session. Project settings can be committed to version control to share with your team.
+- Extract commands inside arithmetic expressions (`$(( $(cmd) ))` and `(( $(cmd) ))`). Previously these were missed, allowing commands like `npm` inside `echo $(( $(npm --version) + 1 ))` to bypass approval.
 
 ### Changed
 - Approval prompts now show the full extracted command sequence with status markers: `✔` for commands already allowed and `✖` for commands that still need approval. This preserves context for compound shell commands like `cd /path && npx tsc --noEmit` while keeping attention on the unapproved steps.
