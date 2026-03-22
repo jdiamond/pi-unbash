@@ -28,14 +28,14 @@ or `false`, `0`, `""`, etc., this branch is skipped and `loadConfig()` returns `
 ---
 
 ### 2. Command substitutions inside arithmetic are currently missed
-**Status:** ✅ fixed.
+**Status:** ✅ fixed in fork, awaiting upstream merge.
 
-This appeared to be an upstream `unbash` limitation. Upstream issue:
+This was an upstream `unbash` limitation. Upstream issue:
 
 - `webpro-nl/unbash#1` — _Command substitutions inside arithmetic are not represented structurally in the AST_
 
 **What we did:**
-- Updated unbash dependency to `jdiamond/unbash#arith-cmd-subst` (fork with the fix)
+- Updated unbash dependency to `jdiamond/unbash#main` (fork with fixes)
 - Added `ArithmeticExpansion` case in `collectWordPart()` to traverse into arithmetic expressions
 - Added `ArithmeticCommandExpansion` case in `collectArithmeticExpression()` to extract embedded commands
 - Handled both `script` (unquoted arithmetic) and `inner` (double-quoted arithmetic) paths
@@ -43,30 +43,22 @@ This appeared to be an upstream `unbash` limitation. Upstream issue:
 - Fixed source string handling so `formatCommand()` displays commands correctly
 - Added tests for extraction and formatting
 
-**Follow-up:** Once upstream PR is merged, switch from fork back to npm release and update dependency.
+**Follow-up:** Once upstream PRs are merged, switch from fork back to npm release and update dependency.
 
 ---
 
 ### 3. Unquoted heredoc bodies can execute command substitutions, but they’re not inspected
-**Status:** fixed locally for now; likely should also be addressed upstream in `unbash`.
+**Status:** ✅ fixed in fork, awaiting upstream merge. Workaround code removed.
 
-`collectRedirect()` visited `redirect.body`, but the installed `unbash` build did not expose heredoc body parts, so unquoted heredocs like this were missed:
+This was an upstream `unbash` limitation — heredoc bodies now have `redirect.body.parts` populated with parsed `CommandExpansion` nodes.
 
-```bash
-cat <<EOF
-$(rm -rf /)
-EOF
-```
+**What we did:**
+- Updated unbash dependency to `jdiamond/unbash#main` (fork with heredoc fix)
+- Removed the workaround code that parsed `redirect.content` as shell text
+- Removed now-dead functions: `collectCommandsFromShellText`, `collectEmbeddedCommandsFromNode`, `collectEmbeddedRedirect`, `collectEmbeddedCaseItem`
+- The fix is simpler — `collectRedirect()` now relies on `redirect.body.parts` being populated by unbash
 
-The current local fix parses unquoted `redirect.content` as shell text and inspects only embedded expansions inside words, without treating the heredoc body itself as executable commands.
-
-Added test coverage for:
-- unquoted heredoc with `$(...)`
-- unquoted heredoc with backticks
-- quoted heredoc remaining inert
-- plain heredoc text not being treated as commands
-
-**Reminder:** create a follow-up issue in `webpro-nl/unbash` about unquoted heredoc body expansions not being surfaced structurally/consumably. If that is fixed upstream, simplify or remove most of the local workaround in `pi-unbash`.
+**Follow-up:** Once upstream PRs are merged, switch from fork back to npm release.
 
 ---
 
@@ -130,9 +122,7 @@ That means `/unbash allow`, `/unbash deny`, `/unbash toggle` can appear to work 
 ## What to tackle first
 
 1. Fix falsey config handling in `loadConfig()`
-2. ~~Close arithmetic substitution gap~~ ✅ done
-3. ~~Close unquoted heredoc gap~~ (already fixed)
-4. Add tests for config handling
+2. Add tests for config handling
 
 ## Nice simplifications
 

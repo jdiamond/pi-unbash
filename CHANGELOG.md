@@ -12,6 +12,11 @@ All notable changes to this project will be documented in this file.
 ### Changed
 - Approval prompts now show the full extracted command sequence with status markers: `✔` for commands already allowed and `✖` for commands that still need approval. This preserves context for compound shell commands like `cd /path && npx tsc --noEmit` while keeping attention on the unapproved steps.
 - `/unbash list` now shows four rule layers: default, user (global), project, and session.
+- Dependency updated to `jdiamond/unbash#combined-fixes` (fork) which fixes:
+  - Command substitutions inside arithmetic expressions now properly expose `script` nodes
+  - Unquoted heredoc bodies now properly expose `body.parts` with parsed expansions
+  - Single-quoted strings with newlines no longer incorrectly flag embedded `$(...)` as commands
+- Removed heredoc workaround code (`collectCommandsFromShellText` and related functions) now that unbash properly exposes heredoc body structure.
 
 ## [2.0.0] - 2026-03-15
 
