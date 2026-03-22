@@ -100,39 +100,60 @@ test("DEFAULT_RULES", async (t) => {
 });
 
 test("buildEffectiveRules", async (t) => {
-  await t.test("defaults alone when user and session rules are empty", () => {
-    const result = buildEffectiveRules({}, {});
+  await t.test("defaults alone when user, project, and session rules are empty", () => {
+    const result = buildEffectiveRules({}, {}, {});
     assert.deepEqual(result, DEFAULT_RULES);
   });
 
   await t.test("user rules are appended after defaults", () => {
-    const result = buildEffectiveRules({ "mytool": "allow" }, {});
+    const result = buildEffectiveRules({ "mytool": "allow" }, {}, {});
     assert.equal(result["mytool"], "allow");
     assert.equal(result["cat"], "allow");
   });
 
   await t.test("user rules override defaults for the same pattern", () => {
-    const result = buildEffectiveRules({ "cat": "ask" }, {});
+    const result = buildEffectiveRules({ "cat": "ask" }, {}, {});
     assert.equal(result["cat"], "ask");
   });
 
-  await t.test("session rules are appended after user rules", () => {
-    const result = buildEffectiveRules({}, { "docker": "allow" });
+  await t.test("project rules are appended after user rules", () => {
+    const result = buildEffectiveRules({}, { "docker": "allow" }, {});
     assert.equal(result["docker"], "allow");
   });
 
+  await t.test("project rules override user rules for the same pattern", () => {
+    const result = buildEffectiveRules({ "npm": "ask" }, { "npm": "allow" }, {});
+    assert.equal(result["npm"], "allow");
+  });
+
+  await t.test("session rules are appended after project rules", () => {
+    const result = buildEffectiveRules({}, {}, { "kubectl": "allow" });
+    assert.equal(result["kubectl"], "allow");
+  });
+
+  await t.test("session rules override project rules for the same pattern", () => {
+    const result = buildEffectiveRules({}, { "npm": "ask" }, { "npm": "allow" });
+    assert.equal(result["npm"], "allow");
+  });
+
   await t.test("session rules override user rules for the same pattern", () => {
-    const result = buildEffectiveRules({ "npm": "ask" }, { "npm": "allow" });
+    const result = buildEffectiveRules({ "npm": "ask" }, {}, { "npm": "allow" });
     assert.equal(result["npm"], "allow");
   });
 
   await t.test("session rules override defaults for the same pattern", () => {
-    const result = buildEffectiveRules({}, { "cat": "ask" });
+    const result = buildEffectiveRules({}, {}, { "cat": "ask" });
     assert.equal(result["cat"], "ask");
   });
 
-  await t.test("all three layers merge in order", () => {
-    const result = buildEffectiveRules({ "git": "ask" }, { "git": "allow" });
+  await t.test("all four layers merge in order (defaults < user < project < session)", () => {
+    const result = buildEffectiveRules({ "git": "ask" }, { "git": "allow" }, {});
     assert.equal(result["git"], "allow");
+  });
+
+  await t.test("project and session both override user", () => {
+    const result = buildEffectiveRules({ "git": "ask" }, { "git": "allow" }, { "curl": "allow" });
+    assert.equal(result["git"], "allow");
+    assert.equal(result["curl"], "allow");
   });
 });

@@ -52,6 +52,15 @@ If the AI attempts to run anything else (e.g., `git commit`, `npm`, `rm`, `node`
 
 ## Configuration
 
+Settings can be configured at two levels:
+
+1. **Global:** `~/.pi/agent/settings.json` — applies to all projects
+2. **Project:** `<project>/.pi/settings.json` — applies only to that project
+
+Project settings override global settings. Rules merge in order: defaults → global rules → project rules → session rules. Last match wins.
+
+### Global Settings
+
 Settings are persisted globally in `~/.pi/agent/settings.json` under the `"unbash"` key:
 
 ```json
@@ -67,6 +76,23 @@ Settings are persisted globally in `~/.pi/agent/settings.json` under the `"unbas
   }
 }
 ```
+
+### Project Settings
+
+Project-level settings go in `.pi/settings.json` in your project root:
+
+```json
+{
+  "unbash": {
+    "rules": {
+      "npm run build": "allow",
+      "npm run test": "allow"
+    }
+  }
+}
+```
+
+Project settings override global settings and can be committed to version control to share with your team.
 
 ### Rules
 
@@ -137,7 +163,7 @@ You can manage settings dynamically mid-session using the `/unbash` command:
 
 * `/unbash allow <command>` - Permanently allow a command (e.g., `/unbash allow git` or `/unbash allow git status`)
 * `/unbash toggle` - Turn the entire confirmation system on or off
-* `/unbash list` - Show current status, default rules, and user rules
+* `/unbash list` - Show current status, default rules, user rules (global), project rules, and session rules
 
 ## License
 

@@ -39,12 +39,32 @@ const SAFE_FALLBACK_CONFIG: UnbashConfig = {
   commandDisplayArgMaxLength: FORMAT_COMMAND_DEFAULT_ARG_MAX_LENGTH,
 };
 
-/** Merge default, user, and session rules. Later layers win. */
+/** Merge default, user, project, and session rules. Later layers win. */
 export function buildEffectiveRules(
   userRules: Record<string, "allow" | "ask">,
+  projectRules: Record<string, "allow" | "ask">,
   sessionRules: Record<string, "allow" | "ask">,
 ): Record<string, "allow" | "ask"> {
-  return { ...DEFAULT_RULES, ...userRules, ...sessionRules };
+  return { ...DEFAULT_RULES, ...userRules, ...projectRules, ...sessionRules };
+}
+
+/** Load project-level unbash config from .pi/settings.json in the given directory. */
+function loadProjectConfig(cwd: string): LoadedConfigResult | null {
+  const projectSettingsPath = path.join(cwd, ".pi", "settings.json");
+  if (!fs.existsSync(projectSettingsPath)) {
+    return null;
+  }
+  try {
+    const data = fs.readFileSync(projectSettingsPath, "utf-8");
+    const parsed = JSON.parse(data);
+    const result = getUnbashConfigFromSettings(parsed);
+    return result;
+  } catch (e) {
+    return {
+      config: { ...SAFE_FALLBACK_CONFIG },
+      warning: "Failed to parse project .pi/settings.json; using safe fallback.",
+    };
+  }
 }
 
 export function validateLoadedUnbashConfig(input: unknown): LoadedConfigResult {
@@ -211,12 +231,19 @@ export default function (pi: ExtensionAPI) {
           ? Object.entries(config.rules).map(([pattern, act]) => `  ${pattern}: ${act}`).join("\n")
           : "  (none)";
 
+        // Load project rules for display
+        const projectResult = loadProjectConfig(ctx.cwd);
+        const projectRules = projectResult?.config.rules ?? {};
+        const projectLines = Object.entries(projectRules).length > 0
+          ? Object.entries(projectRules).map(([pattern, act]) => `  ${pattern}: ${act}`).join("\n")
+          : "  (none)";
+
         const sessionLines = Object.entries(sessionRules).length > 0
           ? Object.entries(sessionRules).map(([pattern, act]) => `  ${pattern}: ${act}`).join("\n")
           : "  (none)";
 
         ctx.ui.notify(
-          `pi-unbash: ${config.enabled ? "ENABLED" : "DISABLED"}\n\nDefault rules:\n${defaultLines}\n\nUser rules:\n${userLines}\n\nSession rules:\n${sessionLines}`,
+          `pi-unbash: ${config.enabled ? "ENABLED" : "DISABLED"}\n\nDefault rules:\n${defaultLines}\n\nUser rules (global):\n${userLines}\n\nProject rules:\n${projectLines}\n\nSession rules:\n${sessionLines}`,
           "info"
         );
       } else {
@@ -282,7 +309,14 @@ export default function (pi: ExtensionAPI) {
 
     if (allCommands.length === 0) return;
 
-    const effectiveRules = buildEffectiveRules(config.rules, sessionRules);
+    // Load project-level config from ctx.cwd/.pi/settings.json
+    const projectResult = loadProjectConfig(ctx.cwd);
+    const projectRules = projectResult?.config.rules ?? {};
+    if (projectResult?.warning && ctx.hasUI) {
+      ctx.ui.notify(`[pi-unbash] ${projectResult.warning}`, "warning");
+    }
+
+    const effectiveRules = buildEffectiveRules(config.rules, projectRules, sessionRules);
 
     const unauthorizedCommands = allCommands.filter(
       cmd => resolveCommandAction(cmd, effectiveRules) !== "allow"

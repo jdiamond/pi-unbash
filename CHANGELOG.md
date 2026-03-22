@@ -6,9 +6,11 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 - Emits a `nudge` event via `pi.events` before each approval prompt so extensions like [`pi-nudge`](https://github.com/jdiamond/pi-nudge) can send a native notification when a command needs approval.
+- Project-level settings from `.pi/settings.json` — rules merge in order: defaults → global → project → session. Project settings can be committed to version control to share with your team.
 
 ### Changed
 - Approval prompts now show the full extracted command sequence with status markers: `✔` for commands already allowed and `✖` for commands that still need approval. This preserves context for compound shell commands like `cd /path && npx tsc --noEmit` while keeping attention on the unapproved steps.
+- `/unbash list` now shows four rule layers: default, user (global), project, and session.
 
 ## [2.0.0] - 2026-03-15
 

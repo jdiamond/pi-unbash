@@ -1,0 +1,8 @@
+{
+  "unbash": {
+    "rules": {
+      "npm run check": "allow",
+      "npm test": "allow"
+    }
+  }
+}
