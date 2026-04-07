@@ -70,10 +70,10 @@ export function resolveCommandDecision(
 				continue;
 			}
 
-			const tokens = pattern.split(" ");
-			const patternName = tokens[0]!;
-			const patternArgs = tokens.slice(1);
+			const tokens = tokenizePattern(pattern);
+			if (tokens.length === 0) continue;
 
+			const [patternName, ...patternArgs] = tokens;
 			if (patternName !== name) continue;
 
 			if (patternArgs.length === 0 || isSubsequence(patternArgs, args)) {
@@ -83,6 +83,11 @@ export function resolveCommandDecision(
 	}
 
 	return result;
+}
+
+function tokenizePattern(pattern: string): string[] {
+	const trimmed = pattern.trim();
+	return trimmed === "" ? [] : trimmed.split(/\s+/);
 }
 
 /** Check if `needle` tokens appear in order within `haystack`. */

@@ -124,6 +124,27 @@ test("resolveCommandAction", async (t) => {
 		);
 	});
 
+	await t.test(
+		"normalizes repeated internal whitespace in rule patterns",
+		() => {
+			assert.equal(
+				resolveCommandAction(cmd("git", ["push", "origin", "main"]), {
+					"git   push": "deny" as const,
+				}),
+				"deny",
+			);
+		},
+	);
+
+	await t.test("ignores surrounding whitespace in rule patterns", () => {
+		assert.equal(
+			resolveCommandAction(cmd("git", ["status"]), {
+				"  git   status  ": "allow" as const,
+			}),
+			"allow",
+		);
+	});
+
 	await t.test("last match wins across allow, ask, and deny", () => {
 		const rules = {
 			git: "allow" as const,
@@ -278,4 +299,25 @@ test("resolveCommandDecision", async (t) => {
 			},
 		);
 	});
+
+	await t.test(
+		"returns the original matched pattern string after whitespace-normalized matching",
+		() => {
+			const layers = {
+				default: {},
+				global: { "  git   push  ": "deny" as const },
+				project: {},
+				session: {},
+			};
+
+			assert.deepEqual(
+				resolveCommandDecision(cmd("git", ["push", "origin", "main"]), layers),
+				{
+					action: "deny",
+					pattern: "  git   push  ",
+					layer: "global",
+				},
+			);
+		},
+	);
 });
