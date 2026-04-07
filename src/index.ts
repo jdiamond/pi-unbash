@@ -597,7 +597,9 @@ export default function (pi: ExtensionAPI) {
         const { action: presetAction, name } = parsePresetSubcommand(target);
 
         if (presetAction === "add" && name) {
-          config.presets.push(name);
+          if (!config.presets.includes(name)) {
+            config.presets.push(name);
+          }
           saveConfig(config);
           ctx.ui.notify(`Preset '${name}' added.`, "info");
         } else if (presetAction === "remove" && name) {
