@@ -4,24 +4,24 @@ export type RuleAction = "allow" | "ask" | "deny";
 export type RuleLayerName = "default" | "global" | "project" | "session";
 
 export interface RuleLayers {
-	default: Record<string, RuleAction>;
-	global: Record<string, RuleAction>;
-	project: Record<string, RuleAction>;
-	session: Record<string, RuleAction>;
+  default: Record<string, RuleAction>;
+  global: Record<string, RuleAction>;
+  project: Record<string, RuleAction>;
+  session: Record<string, RuleAction>;
 }
 
 export interface RuleDecision {
-	action: RuleAction;
-	pattern?: string;
-	layer?: RuleLayerName;
+  action: RuleAction;
+  pattern?: string;
+  layer?: RuleLayerName;
 }
 
 export function getCommandName(cmd: CommandRef): string {
-	return cmd.node.name?.value ?? cmd.node.name?.text ?? "";
+  return cmd.node.name?.value ?? cmd.node.name?.text ?? "";
 }
 
 export function getCommandArgs(cmd: CommandRef): string[] {
-	return cmd.node.suffix.map((word) => word.value ?? word.text);
+  return cmd.node.suffix.map((word) => word.value ?? word.text);
 }
 
 /**
@@ -43,58 +43,58 @@ export function getCommandArgs(cmd: CommandRef): string[] {
  * Returns "ask" if no rule matches.
  */
 export function resolveCommandAction(
-	cmd: CommandRef,
-	rules: Record<string, RuleAction>,
+  cmd: CommandRef,
+  rules: Record<string, RuleAction>,
 ): RuleAction {
-	return resolveCommandDecision(cmd, {
-		default: rules,
-		global: {},
-		project: {},
-		session: {},
-	}).action;
+  return resolveCommandDecision(cmd, {
+    default: rules,
+    global: {},
+    project: {},
+    session: {},
+  }).action;
 }
 
 export function resolveCommandDecision(
-	cmd: CommandRef,
-	layers: RuleLayers,
+  cmd: CommandRef,
+  layers: RuleLayers,
 ): RuleDecision {
-	const name = getCommandName(cmd);
-	const args = getCommandArgs(cmd);
+  const name = getCommandName(cmd);
+  const args = getCommandArgs(cmd);
 
-	let result: RuleDecision = { action: "ask" };
+  let result: RuleDecision = { action: "ask" };
 
-	for (const layer of ["default", "global", "project", "session"] as const) {
-		for (const [pattern, action] of Object.entries(layers[layer])) {
-			if (pattern === "*") {
-				result = { action, pattern, layer };
-				continue;
-			}
+  for (const layer of ["default", "global", "project", "session"] as const) {
+    for (const [pattern, action] of Object.entries(layers[layer])) {
+      if (pattern === "*") {
+        result = { action, pattern, layer };
+        continue;
+      }
 
-			const tokens = tokenizePattern(pattern);
-			if (tokens.length === 0) continue;
+      const tokens = tokenizePattern(pattern);
+      if (tokens.length === 0) continue;
 
-			const [patternName, ...patternArgs] = tokens;
-			if (patternName !== name) continue;
+      const [patternName, ...patternArgs] = tokens;
+      if (patternName !== name) continue;
 
-			if (patternArgs.length === 0 || isSubsequence(patternArgs, args)) {
-				result = { action, pattern, layer };
-			}
-		}
-	}
+      if (patternArgs.length === 0 || isSubsequence(patternArgs, args)) {
+        result = { action, pattern, layer };
+      }
+    }
+  }
 
-	return result;
+  return result;
 }
 
 function tokenizePattern(pattern: string): string[] {
-	const trimmed = pattern.trim();
-	return trimmed === "" ? [] : trimmed.split(/\s+/);
+  const trimmed = pattern.trim();
+  return trimmed === "" ? [] : trimmed.split(/\s+/);
 }
 
 /** Check if `needle` tokens appear in order within `haystack`. */
 function isSubsequence(needle: string[], haystack: string[]): boolean {
-	let ni = 0;
-	for (let hi = 0; hi < haystack.length && ni < needle.length; hi++) {
-		if (haystack[hi] === needle[ni]) ni++;
-	}
-	return ni === needle.length;
+  let ni = 0;
+  for (let hi = 0; hi < haystack.length && ni < needle.length; hi++) {
+    if (haystack[hi] === needle[ni]) ni++;
+  }
+  return ni === needle.length;
 }
