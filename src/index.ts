@@ -12,21 +12,33 @@ import {
   formatCommand,
 } from "./format.ts";
 import { buildApprovalPrompt } from "./prompt.ts";
+import { extractTopLevelFastCommands, isFastAllowSafe } from "./fast.ts";
+import { detectTriggeredGuards, findDeniedGuard } from "./guards.ts";
+import {
+  BUILTIN_PRESETS,
+  buildEffectivePresetPolicies,
+  buildPresetContext,
+  type PolicyAction,
+  type PersistentRuleAction,
+  type UnbashPreset,
+} from "./presets.ts";
 import {
   getCommandName,
   type RuleDecision,
   type RuleLayers,
   resolveCommandDecision,
+  resolveCommandDecisionFromTokens,
 } from "./resolve.ts";
 
 const AGENT_DIR = path.join(os.homedir(), ".pi", "agent");
 const SETTINGS_PATH = path.join(AGENT_DIR, "settings.json");
 
-type PersistentRuleAction = "allow" | "ask" | "deny";
 type SessionRuleAction = "allow";
 
 interface UnbashConfig {
   enabled: boolean;
+  presets: string[];
+  customPresets: Record<string, UnbashPreset>;
   rules: Record<string, PersistentRuleAction>;
   commandDisplayMaxLength: number;
   commandDisplayArgMaxLength: number;
@@ -39,6 +51,8 @@ interface LoadedConfigResult {
 
 const DEFAULT_CONFIG: UnbashConfig = {
   enabled: true,
+  presets: [],
+  customPresets: {},
   rules: {},
   commandDisplayMaxLength: FORMAT_COMMAND_DEFAULT_MAX_LENGTH,
   commandDisplayArgMaxLength: FORMAT_COMMAND_DEFAULT_ARG_MAX_LENGTH,
@@ -46,30 +60,85 @@ const DEFAULT_CONFIG: UnbashConfig = {
 
 const SAFE_FALLBACK_CONFIG: UnbashConfig = {
   enabled: true,
+  presets: [],
+  customPresets: {},
   rules: {},
   commandDisplayMaxLength: FORMAT_COMMAND_DEFAULT_MAX_LENGTH,
   commandDisplayArgMaxLength: FORMAT_COMMAND_DEFAULT_ARG_MAX_LENGTH,
 };
 
-/** Merge default, user, project, and session rules. Later layers win. */
+/** Merge default, preset, explicit, and session rules. Later layers win. */
 export function buildEffectiveRules(
   userRules: Record<string, PersistentRuleAction>,
   projectRules: Record<string, PersistentRuleAction>,
   sessionRules: Record<string, SessionRuleAction>,
+  options?: {
+    globalPresetRules?: Record<string, PersistentRuleAction>;
+    projectPresetRules?: Record<string, PersistentRuleAction>;
+  },
 ): Record<string, PersistentRuleAction> {
-  return { ...DEFAULT_RULES, ...userRules, ...projectRules, ...sessionRules };
+  return {
+    ...DEFAULT_RULES,
+    ...(options?.globalPresetRules ?? {}),
+    ...userRules,
+    ...(options?.projectPresetRules ?? {}),
+    ...projectRules,
+    ...sessionRules,
+  };
 }
 
 export function buildRuleLayers(
   userRules: Record<string, PersistentRuleAction>,
   projectRules: Record<string, PersistentRuleAction>,
   sessionRules: Record<string, SessionRuleAction>,
+  options?: {
+    globalPresetRules?: Record<string, PersistentRuleAction>;
+    projectPresetRules?: Record<string, PersistentRuleAction>;
+  },
 ): RuleLayers {
   return {
     default: DEFAULT_RULES,
-    global: userRules,
-    project: projectRules,
+    global: { ...(options?.globalPresetRules ?? {}), ...userRules },
+    project: { ...(options?.projectPresetRules ?? {}), ...projectRules },
     session: sessionRules,
+  };
+}
+
+export function resolvePresetPoliciesForConfigs(
+  globalConfig: Pick<UnbashConfig, "presets" | "customPresets">,
+  projectConfig: Pick<UnbashConfig, "presets" | "customPresets">,
+): {
+  globalPresetRules: Record<string, PersistentRuleAction>;
+  projectPresetRules: Record<string, PersistentRuleAction>;
+  toolPolicies: Record<string, PolicyAction>;
+  guards: Record<string, PolicyAction>;
+  unknownPresetNames: string[];
+} {
+  const context = buildPresetContext(globalConfig, projectConfig);
+  const globalPresetPolicies = buildEffectivePresetPolicies({
+    activePresets: globalConfig.presets,
+    customPresets: context.customPresets,
+  });
+  const projectPresetPolicies = buildEffectivePresetPolicies({
+    activePresets: projectConfig.presets,
+    customPresets: context.customPresets,
+  });
+
+  return {
+    globalPresetRules: globalPresetPolicies.rules,
+    projectPresetRules: projectPresetPolicies.rules,
+    toolPolicies: {
+      ...globalPresetPolicies.toolPolicies,
+      ...projectPresetPolicies.toolPolicies,
+    },
+    guards: {
+      ...globalPresetPolicies.guards,
+      ...projectPresetPolicies.guards,
+    },
+    unknownPresetNames: [
+      ...globalPresetPolicies.unknownPresetNames,
+      ...projectPresetPolicies.unknownPresetNames,
+    ],
   };
 }
 
@@ -104,6 +173,127 @@ function loadProjectConfig(cwd: string): LoadedConfigResult | null {
   }
 }
 
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function parsePresetNames(input: unknown): {
+  value: string[];
+  invalid: boolean;
+} {
+  if (input === undefined) return { value: [], invalid: false };
+  if (!Array.isArray(input)) return { value: [], invalid: true };
+
+  const value: string[] = [];
+  let invalid = false;
+  for (const name of input) {
+    if (typeof name === "string" && name.trim().length > 0) {
+      value.push(name);
+    } else {
+      invalid = true;
+    }
+  }
+
+  return { value, invalid };
+}
+
+function parsePolicyMap(
+  input: unknown,
+): { value: Record<string, PolicyAction>; invalid: boolean } {
+  if (!isObjectRecord(input)) return { value: {}, invalid: true };
+
+  const value: Record<string, PolicyAction> = {};
+  let invalid = false;
+  for (const [key, action] of Object.entries(input)) {
+    if (
+      typeof key === "string" &&
+      key.trim().length > 0 &&
+      (action === "allow" || action === "deny")
+    ) {
+      value[key] = action;
+    } else {
+      invalid = true;
+    }
+  }
+
+  return { value, invalid };
+}
+
+function parseRuleMap(
+  input: unknown,
+): { value: Record<string, PersistentRuleAction>; invalid: boolean } {
+  if (!isObjectRecord(input)) return { value: {}, invalid: true };
+
+  const value: Record<string, PersistentRuleAction> = {};
+  let invalid = false;
+  for (const [key, action] of Object.entries(input)) {
+    if (
+      typeof key === "string" &&
+      key.trim().length > 0 &&
+      (action === "allow" || action === "ask" || action === "deny")
+    ) {
+      value[key] = action;
+    } else {
+      invalid = true;
+    }
+  }
+
+  return { value, invalid };
+}
+
+function parseCustomPresets(input: unknown): {
+  value: Record<string, UnbashPreset>;
+  invalid: boolean;
+} {
+  if (input === undefined) return { value: {}, invalid: false };
+  if (!isObjectRecord(input)) return { value: {}, invalid: true };
+
+  const value: Record<string, UnbashPreset> = {};
+  let invalid = false;
+
+  for (const [presetName, presetValue] of Object.entries(input)) {
+    if (typeof presetName !== "string" || presetName.trim().length === 0) {
+      invalid = true;
+      continue;
+    }
+
+    if (!isObjectRecord(presetValue)) {
+      invalid = true;
+      continue;
+    }
+
+    const preset: UnbashPreset = {};
+
+    if (Object.hasOwn(presetValue, "rules")) {
+      const parsed = parseRuleMap(presetValue.rules);
+      if (parsed.invalid) invalid = true;
+      if (Object.keys(parsed.value).length > 0) {
+        preset.rules = parsed.value;
+      }
+    }
+
+    if (Object.hasOwn(presetValue, "toolPolicies")) {
+      const parsed = parsePolicyMap(presetValue.toolPolicies);
+      if (parsed.invalid) invalid = true;
+      if (Object.keys(parsed.value).length > 0) {
+        preset.toolPolicies = parsed.value;
+      }
+    }
+
+    if (Object.hasOwn(presetValue, "guards")) {
+      const parsed = parsePolicyMap(presetValue.guards);
+      if (parsed.invalid) invalid = true;
+      if (Object.keys(parsed.value).length > 0) {
+        preset.guards = parsed.value;
+      }
+    }
+
+    value[presetName] = preset;
+  }
+
+  return { value, invalid };
+}
+
 export function validateLoadedUnbashConfig(input: unknown): LoadedConfigResult {
   if (!input || typeof input !== "object") {
     return {
@@ -123,39 +313,25 @@ export function validateLoadedUnbashConfig(input: unknown): LoadedConfigResult {
     warnings.push("enabled must be a boolean");
   }
 
+  const parsedPresets = parsePresetNames(cfg.presets);
+  if (parsedPresets.invalid) {
+    warnings.push('presets must be an array of non-empty strings');
+  }
+
+  const parsedCustomPresets = parseCustomPresets(cfg.customPresets);
+  if (parsedCustomPresets.invalid) {
+    warnings.push("customPresets contains invalid entries");
+  }
+
   let rules: Record<string, PersistentRuleAction> = {};
   if (cfg.rules !== undefined) {
-    if (
-      cfg.rules &&
-      typeof cfg.rules === "object" &&
-      !Array.isArray(cfg.rules)
-    ) {
-      const validRules: Record<string, PersistentRuleAction> = {};
-      let hasInvalid = false;
-      for (const [key, value] of Object.entries(
-        cfg.rules as Record<string, unknown>,
-      )) {
-        if (
-          typeof key === "string" &&
-          key.trim().length > 0 &&
-          (value === "allow" || value === "ask" || value === "deny")
-        ) {
-          validRules[key] = value;
-        } else {
-          hasInvalid = true;
-        }
-      }
-      if (hasInvalid) {
-        warnings.push(
-          'rules must be an object mapping non-empty strings to "allow", "ask", or "deny"',
-        );
-      }
-      rules = validRules;
-    } else {
+    const parsedRules = parseRuleMap(cfg.rules);
+    if (parsedRules.invalid) {
       warnings.push(
         'rules must be an object mapping non-empty strings to "allow", "ask", or "deny"',
       );
     }
+    rules = parsedRules.value;
   }
 
   let commandDisplayMaxLength = SAFE_FALLBACK_CONFIG.commandDisplayMaxLength;
@@ -183,6 +359,8 @@ export function validateLoadedUnbashConfig(input: unknown): LoadedConfigResult {
     return {
       config: {
         enabled,
+        presets: parsedPresets.value,
+        customPresets: parsedCustomPresets.value,
         rules,
         commandDisplayMaxLength,
         commandDisplayArgMaxLength,
@@ -194,6 +372,8 @@ export function validateLoadedUnbashConfig(input: unknown): LoadedConfigResult {
   return {
     config: {
       enabled,
+      presets: parsedPresets.value,
+      customPresets: parsedCustomPresets.value,
       rules,
       commandDisplayMaxLength,
       commandDisplayArgMaxLength,
@@ -243,10 +423,16 @@ function saveConfig(config: UnbashConfig) {
       settings = JSON.parse(fs.readFileSync(SETTINGS_PATH, "utf-8"));
     }
 
-    // Only save user rules, never the merged effective set
+    // Only save explicit user config, never merged effective policy
     settings.unbash = {
       enabled: config.enabled,
       rules: config.rules,
+      ...(config.presets.length > 0 && {
+        presets: config.presets,
+      }),
+      ...(Object.keys(config.customPresets).length > 0 && {
+        customPresets: config.customPresets,
+      }),
       ...(config.commandDisplayMaxLength !==
         FORMAT_COMMAND_DEFAULT_MAX_LENGTH && {
         commandDisplayMaxLength: config.commandDisplayMaxLength,
@@ -285,6 +471,61 @@ export function upsertRuleAtEnd<T extends string>(
   delete next[pattern];
   next[pattern] = action;
   return next;
+}
+
+function buildPresetListMessage(
+  config: UnbashConfig,
+  projectConfig: UnbashConfig,
+  sessionRules: Record<string, SessionRuleAction>,
+): string {
+  const builtinNames = Object.keys(BUILTIN_PRESETS).sort();
+  const customNames = Object.keys({
+    ...config.customPresets,
+    ...projectConfig.customPresets,
+  }).sort();
+
+  const resolved = resolvePresetPoliciesForConfigs(config, projectConfig);
+
+  const activeGlobal = config.presets.length > 0
+    ? config.presets.map((name, i) => `  ${i + 1}. ${name}`).join("\n")
+    : "  (none)";
+  const activeProject = projectConfig.presets.length > 0
+    ? projectConfig.presets.map((name, i) => `  ${i + 1}. ${name}`).join("\n")
+    : "  (none)";
+
+  const userRules = Object.entries(config.rules).length > 0
+    ? Object.entries(config.rules).map(([pattern, act]) => `  ${pattern}: ${act}`).join("\n")
+    : "  (none)";
+  const projectRules = Object.entries(projectConfig.rules).length > 0
+    ? Object.entries(projectConfig.rules)
+        .map(([pattern, act]) => `  ${pattern}: ${act}`)
+        .join("\n")
+    : "  (none)";
+  const sessionRuleLines = Object.entries(sessionRules).length > 0
+    ? Object.entries(sessionRules).map(([pattern, act]) => `  ${pattern}: ${act}`).join("\n")
+    : "  (none)";
+
+  const unknown = resolved.unknownPresetNames.length > 0
+    ? `\n\nUnknown active presets:\n${resolved.unknownPresetNames.map((name) => `  - ${name}`).join("\n")}`
+    : "";
+
+  return [
+    `Built-in presets:\n${builtinNames.map((name) => `  - ${name}`).join("\n")}`,
+    `Available custom presets:\n${customNames.length > 0 ? customNames.map((name) => `  - ${name}`).join("\n") : "  (none)"}`,
+    `Active global preset order:\n${activeGlobal}`,
+    `Active project preset order:\n${activeProject}`,
+    `Explicit global rules:\n${userRules}`,
+    `Explicit project rules:\n${projectRules}`,
+    `Session rules:\n${sessionRuleLines}`,
+  ].join("\n\n") + unknown;
+}
+
+function parsePresetSubcommand(input: string): { action: string; name: string } {
+  const trimmed = input.trim();
+  if (!trimmed) return { action: "", name: "" };
+
+  const [action = "", ...rest] = trimmed.split(/\s+/);
+  return { action, name: rest.join(" ").trim() };
 }
 
 export default function (pi: ExtensionAPI) {
@@ -331,7 +572,6 @@ export default function (pi: ExtensionAPI) {
                 .join("\n")
             : "  (none)";
 
-        // Load project rules for display
         const projectResult = loadProjectConfig(ctx.cwd);
         const projectRules = projectResult?.config.rules ?? {};
         const projectLines =
@@ -352,9 +592,42 @@ export default function (pi: ExtensionAPI) {
           `pi-unbash: ${config.enabled ? "ENABLED" : "DISABLED"}\n\nDefault rules:\n${defaultLines}\n\nUser rules (global):\n${userLines}\n\nProject rules:\n${projectLines}\n\nSession rules:\n${sessionLines}`,
           "info",
         );
+      } else if (action === "preset") {
+        const { action: presetAction, name } = parsePresetSubcommand(target);
+
+        if (presetAction === "add" && name) {
+          config.presets.push(name);
+          saveConfig(config);
+          ctx.ui.notify(`Preset '${name}' added.`, "info");
+        } else if (presetAction === "remove" && name) {
+          config.presets = config.presets.filter((preset) => preset !== name);
+          saveConfig(config);
+          ctx.ui.notify(`Preset '${name}' removed.`, "info");
+        } else if (presetAction === "clear") {
+          config.presets = [];
+          saveConfig(config);
+          ctx.ui.notify("All active global presets cleared.", "info");
+        } else if (presetAction === "list") {
+          const projectResult = loadProjectConfig(ctx.cwd);
+          const projectConfig = projectResult?.config ?? DEFAULT_CONFIG;
+
+          if (projectResult?.warning) {
+            ctx.ui.notify(`[pi-unbash] ${projectResult.warning}`, "warning");
+          }
+
+          ctx.ui.notify(
+            buildPresetListMessage(config, projectConfig, sessionRules),
+            "info",
+          );
+        } else {
+          ctx.ui.notify(
+            "Usage: /unbash preset <list|add|remove|clear> [name]",
+            "warning",
+          );
+        }
       } else {
         ctx.ui.notify(
-          "Usage: /unbash <allow|deny|toggle|list> [command]",
+          "Usage: /unbash <allow|deny|toggle|list|preset> [command]",
           "warning",
         );
       }
@@ -369,15 +642,69 @@ export default function (pi: ExtensionAPI) {
     }
 
     if (!config.enabled) return;
+
+    const projectResult = loadProjectConfig(ctx.cwd);
+    const projectConfig = projectResult?.config ?? DEFAULT_CONFIG;
+    if (projectResult?.warning && ctx.hasUI) {
+      ctx.ui.notify(`[pi-unbash] ${projectResult.warning}`, "warning");
+    }
+
+    const presetPolicies = resolvePresetPoliciesForConfigs(config, projectConfig);
+    if (presetPolicies.unknownPresetNames.length > 0 && ctx.hasUI) {
+      ctx.ui.notify(
+        `[pi-unbash] Unknown preset(s): ${presetPolicies.unknownPresetNames.join(", ")}`,
+        "warning",
+      );
+    }
+
+    const toolName = (event as { toolName?: unknown }).toolName;
+    if (typeof toolName !== "string" || toolName.length === 0) return;
+
+    const toolPolicy = presetPolicies.toolPolicies[toolName];
+    if (toolPolicy === "deny") {
+      return {
+        block: true,
+        reason: `Denied by tool policy for "${toolName}" (preset).`,
+      };
+    }
+    if (toolPolicy === "allow") return;
+
     if (!isToolCallEventType("bash", event)) return;
 
     const rawCmd = event.input.command;
     if (!rawCmd || rawCmd.trim() === "") return;
 
+    const layers = buildRuleLayers(config.rules, projectConfig.rules, sessionRules, {
+      globalPresetRules: presetPolicies.globalPresetRules,
+      projectPresetRules: presetPolicies.projectPresetRules,
+    });
+
+    const fastCommands = extractTopLevelFastCommands(rawCmd);
+    if (fastCommands.length > 0) {
+      const fastDecisions = fastCommands.map((cmd) =>
+        resolveCommandDecisionFromTokens(cmd.name, cmd.args, layers)
+      );
+
+      const fastDenied = fastDecisions.find((decision) => decision.action === "deny");
+      if (fastDenied) {
+        return {
+          block: true,
+          reason: `Denied by fast rule "${fastDenied.pattern ?? "*"}": ${rawCmd.trim()}`,
+        };
+      }
+
+      if (
+        fastDecisions.every((decision) => decision.action === "allow") &&
+        isFastAllowSafe(rawCmd)
+      ) {
+        return;
+      }
+    }
+
     let ast;
     try {
       ast = parseBash(rawCmd);
-    } catch (e) {
+    } catch {
       if (!ctx.hasUI) {
         return {
           block: true,
@@ -428,17 +755,8 @@ export default function (pi: ExtensionAPI) {
     }
 
     const allCommands = extractAllCommandsFromAST(ast, rawCmd);
-
     if (allCommands.length === 0) return;
 
-    // Load project-level config from ctx.cwd/.pi/settings.json
-    const projectResult = loadProjectConfig(ctx.cwd);
-    const projectRules = projectResult?.config.rules ?? {};
-    if (projectResult?.warning && ctx.hasUI) {
-      ctx.ui.notify(`[pi-unbash] ${projectResult.warning}`, "warning");
-    }
-
-    const layers = buildRuleLayers(config.rules, projectRules, sessionRules);
     const decisions = allCommands.map((command) => ({
       command,
       decision: resolveCommandDecision(command, layers),
@@ -461,6 +779,17 @@ export default function (pi: ExtensionAPI) {
 
     if (unauthorizedCommands.length === 0) {
       return;
+    }
+
+    const deniedGuard = findDeniedGuard(
+      detectTriggeredGuards(ast),
+      presetPolicies.guards,
+    );
+    if (deniedGuard) {
+      return {
+        block: true,
+        reason: `Denied by guard policy "${deniedGuard}" (preset).`,
+      };
     }
 
     if (!ctx.hasUI) {

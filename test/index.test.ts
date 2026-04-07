@@ -6,6 +6,7 @@ import { test } from "node:test";
 import { pathToFileURL } from "node:url";
 import { parse as parseBash } from "unbash";
 import { extractAllCommandsFromAST } from "../src/extract.ts";
+import { isFastAllowSafe } from "../src/fast.ts";
 import { buildDeniedReason } from "../src/index.ts";
 
 async function loadFreshExtension(tempHome: string) {
@@ -35,6 +36,11 @@ test("buildDeniedReason", async (t) => {
       'Denied by project rule "git push": git push origin main',
     );
   });
+});
+
+test("isFastAllowSafe detects composed shell constructs", () => {
+  assert.equal(isFastAllowSafe("echo hello"), true);
+  assert.equal(isFastAllowSafe("echo $(git push origin main)"), false);
 });
 
 test("tool_call deny short-circuits before prompting UI", async () => {
@@ -113,7 +119,7 @@ test("tool_call deny short-circuits before prompting UI", async () => {
 
     assert.deepEqual(result, {
       block: true,
-      reason: 'Denied by project rule "git push": git push origin main',
+      reason: 'Denied by fast rule "git push": git push origin main',
     });
     assert.equal(confirmCalls.length, 0);
     assert.equal(selectCalls.length, 0);
@@ -198,7 +204,7 @@ test("tool_call deny returns in headless mode without prompt UI", async () => {
 
     assert.deepEqual(result, {
       block: true,
-      reason: 'Denied by project rule "git push": git push origin main',
+      reason: 'Denied by fast rule "git push": git push origin main',
     });
     assert.equal(confirmCalls.length, 0);
     assert.equal(selectCalls.length, 0);

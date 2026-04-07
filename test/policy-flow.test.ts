@@ -317,7 +317,7 @@ test("fast allow precheck does not bypass nested deny in command substitution", 
 
     assert.deepEqual(result, {
       block: true,
-      reason: 'Denied by default rule "git push": git push origin main',
+      reason: 'Denied by global rule "git push": git push origin main',
     });
   } finally {
     if (originalHome === undefined) delete process.env.HOME;
