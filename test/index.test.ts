@@ -232,7 +232,7 @@ test("guard deny blocks even when command rule allows", async () => {
         {
           unbash: {
             rules: {
-              echo: "allow",
+              curl: "allow",
             },
             presets: ["pi-bash-restrict"],
           },
@@ -266,7 +266,7 @@ test("guard deny blocks even when command rule allows", async () => {
         type: "tool_call",
         toolCallId: "tc-guard-precedence",
         toolName: "bash",
-        input: { command: "echo $(whoami)" },
+        input: { command: "curl https://example.com > out.txt" },
       },
       {
         hasUI: false,
@@ -285,8 +285,7 @@ test("guard deny blocks even when command rule allows", async () => {
 
     assert.deepEqual(result, {
       block: true,
-      reason:
-        'Denied by guard policy "command-substitution" in preset "pi-bash-restrict": echo $(whoami)',
+      reason: 'Denied by guard policy "redirects" (preset).',
     });
   } finally {
     if (originalHome === undefined) {

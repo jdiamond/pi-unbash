@@ -782,10 +782,6 @@ export default function (pi: ExtensionAPI) {
       .filter((entry) => entry.decision.action === "ask")
       .map((entry) => entry.command);
 
-    if (unauthorizedCommands.length === 0) {
-      return;
-    }
-
     const deniedGuard = findDeniedGuard(
       detectTriggeredGuards(ast),
       presetPolicies.guards,
@@ -795,6 +791,10 @@ export default function (pi: ExtensionAPI) {
         block: true,
         reason: `Denied by guard policy "${deniedGuard}" (preset).`,
       };
+    }
+
+    if (unauthorizedCommands.length === 0) {
+      return;
     }
 
     if (!ctx.hasUI) {
