@@ -126,3 +126,87 @@ test("tool_call deny short-circuits before prompting UI", async () => {
 		}
 	}
 });
+
+test("tool_call deny returns in headless mode without prompt UI", async () => {
+	const originalHome = process.env.HOME;
+	const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "pi-unbash-home-"));
+	const tempProject = fs.mkdtempSync(
+		path.join(os.tmpdir(), "pi-unbash-project-"),
+	);
+
+	try {
+		fs.mkdirSync(path.join(tempProject, ".pi"), { recursive: true });
+		fs.writeFileSync(
+			path.join(tempProject, ".pi", "settings.json"),
+			JSON.stringify(
+				{
+					unbash: {
+						rules: {
+							"git push": "deny",
+						},
+					},
+				},
+				null,
+				2,
+			),
+		);
+
+		const extension = await loadFreshExtension(tempHome);
+
+		let toolCallHandler: ((event: any, ctx: any) => Promise<any>) | undefined;
+		const confirmCalls: unknown[] = [];
+		const selectCalls: unknown[] = [];
+
+		extension({
+			registerCommand() {},
+			on(event: string, handler: any) {
+				if (event === "tool_call") toolCallHandler = handler;
+			},
+			events: {
+				emit() {},
+			},
+		} as any);
+
+		assert.ok(
+			toolCallHandler,
+			"expected extension to register tool_call handler",
+		);
+
+		const result = await toolCallHandler!(
+			{
+				type: "tool_call",
+				toolCallId: "tc-headless-deny",
+				toolName: "bash",
+				input: { command: "git push origin main" },
+			},
+			{
+				hasUI: false,
+				cwd: tempProject,
+				ui: {
+					notify() {},
+					async confirm(...args: unknown[]) {
+						confirmCalls.push(args);
+						return true;
+					},
+					async select(...args: unknown[]) {
+						selectCalls.push(args);
+						return "Allow";
+					},
+				},
+			},
+		);
+
+		assert.deepEqual(result, {
+			block: true,
+			reason: 'Denied by project rule "git push": git push origin main',
+		});
+		assert.equal(confirmCalls.length, 0);
+		assert.equal(selectCalls.length, 0);
+	} finally {
+		if (originalHome === undefined) {
+			delete process.env.HOME;
+		} else {
+			process.env.HOME = originalHome;
+		}
+	}
+});
