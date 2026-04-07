@@ -214,8 +214,8 @@ test("buildEffectiveRules", async (t) => {
 	});
 
 	await t.test("session rules override defaults for the same pattern", () => {
-		const result = buildEffectiveRules({}, {}, { cat: "ask" });
-		assert.equal(result["cat"], "ask");
+		const result = buildEffectiveRules({}, {}, { cat: "allow" });
+		assert.equal(result["cat"], "allow");
 	});
 
 	await t.test(

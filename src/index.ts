@@ -12,7 +12,12 @@ import {
 	formatCommand,
 } from "./format.ts";
 import { buildApprovalPrompt } from "./prompt.ts";
-import { getCommandName, resolveCommandAction } from "./resolve.ts";
+import {
+	getCommandName,
+	type RuleDecision,
+	type RuleLayers,
+	resolveCommandDecision,
+} from "./resolve.ts";
 
 const AGENT_DIR = path.join(os.homedir(), ".pi", "agent");
 const SETTINGS_PATH = path.join(AGENT_DIR, "settings.json");
@@ -53,6 +58,30 @@ export function buildEffectiveRules(
 	sessionRules: Record<string, SessionRuleAction>,
 ): Record<string, PersistentRuleAction> {
 	return { ...DEFAULT_RULES, ...userRules, ...projectRules, ...sessionRules };
+}
+
+export function buildRuleLayers(
+	userRules: Record<string, PersistentRuleAction>,
+	projectRules: Record<string, PersistentRuleAction>,
+	sessionRules: Record<string, SessionRuleAction>,
+): RuleLayers {
+	return {
+		default: DEFAULT_RULES,
+		global: userRules,
+		project: projectRules,
+		session: sessionRules,
+	};
+}
+
+export function buildDeniedReason(
+	command: Parameters<typeof formatCommand>[0],
+	decision: RuleDecision,
+	options: { maxLength?: number; argMaxLength?: number },
+): string {
+	const preview = formatCommand(command, options);
+	const layer = decision.layer ?? "unknown";
+	const pattern = decision.pattern ?? "*";
+	return `Denied by ${layer} rule "${pattern}": ${preview}`;
 }
 
 /** Load project-level unbash config from .pi/settings.json in the given directory. */
@@ -409,15 +438,26 @@ export default function (pi: ExtensionAPI) {
 			ctx.ui.notify(`[pi-unbash] ${projectResult.warning}`, "warning");
 		}
 
-		const effectiveRules = buildEffectiveRules(
-			config.rules,
-			projectRules,
-			sessionRules,
-		);
+		const layers = buildRuleLayers(config.rules, projectRules, sessionRules);
+		const decisions = allCommands.map((command) => ({
+			command,
+			decision: resolveCommandDecision(command, layers),
+		}));
 
-		const unauthorizedCommands = allCommands.filter(
-			(cmd) => resolveCommandAction(cmd, effectiveRules) !== "allow",
-		);
+		const denied = decisions.find((entry) => entry.decision.action === "deny");
+		if (denied) {
+			return {
+				block: true,
+				reason: buildDeniedReason(denied.command, denied.decision, {
+					maxLength: config.commandDisplayMaxLength,
+					argMaxLength: config.commandDisplayArgMaxLength,
+				}),
+			};
+		}
+
+		const unauthorizedCommands = decisions
+			.filter((entry) => entry.decision.action === "ask")
+			.map((entry) => entry.command);
 
 		if (unauthorizedCommands.length === 0) {
 			return;
