@@ -160,6 +160,25 @@ test("validateLoadedUnbashConfig", async (t) => {
     assert.ok(result.warning?.includes("customPresets"));
   });
 
+  await t.test("invalid custom guard keys are dropped with validation warning", () => {
+    const result = validateLoadedUnbashConfig({
+      enabled: true,
+      customPresets: {
+        team: {
+          guards: { "command-subsitution": "deny", redirects: "deny" },
+        },
+      },
+      rules: {},
+    });
+
+    assert.deepEqual(result.config.customPresets, {
+      team: {
+        guards: { redirects: "deny" },
+      },
+    });
+    assert.ok(result.warning?.includes("customPresets"));
+  });
+
   await t.test("accepts custom display settings", () => {
     const result = validateLoadedUnbashConfig({
       enabled: true,

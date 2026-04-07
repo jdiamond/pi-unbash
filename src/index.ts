@@ -13,7 +13,12 @@ import {
 } from "./format.ts";
 import { buildApprovalPrompt } from "./prompt.ts";
 import { extractTopLevelFastCommands, isFastAllowSafe } from "./fast.ts";
-import { detectTriggeredGuards, findDeniedGuard } from "./guards.ts";
+import {
+  detectTriggeredGuards,
+  findDeniedGuard,
+  GUARD_NAMES,
+  type GuardName,
+} from "./guards.ts";
 import {
   BUILTIN_PRESETS,
   buildEffectivePresetPolicies,
@@ -283,8 +288,18 @@ function parseCustomPresets(input: unknown): {
     if (Object.hasOwn(presetValue, "guards")) {
       const parsed = parsePolicyMap(presetValue.guards);
       if (parsed.invalid) invalid = true;
-      if (Object.keys(parsed.value).length > 0) {
-        preset.guards = parsed.value;
+
+      const guards: Record<string, PolicyAction> = {};
+      for (const [guard, action] of Object.entries(parsed.value)) {
+        if (GUARD_NAMES.has(guard as GuardName)) {
+          guards[guard] = action;
+        } else {
+          invalid = true;
+        }
+      }
+
+      if (Object.keys(guards).length > 0) {
+        preset.guards = guards;
       }
     }
 
