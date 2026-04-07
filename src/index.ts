@@ -188,7 +188,7 @@ function parsePresetNames(input: unknown): {
   let invalid = false;
   for (const name of input) {
     if (typeof name === "string" && name.trim().length > 0) {
-      value.push(name);
+      value.push(name.trim());
     } else {
       invalid = true;
     }
