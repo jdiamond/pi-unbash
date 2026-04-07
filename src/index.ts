@@ -533,6 +533,7 @@ export default function (pi: ExtensionAPI) {
   const config = loaded.config;
   let configWarning = loaded.warning;
   const sessionRules: Record<string, SessionRuleAction> = {};
+  const warnedUnknownPresets = new Set<string>();
 
   if (configWarning) {
     console.warn(`[pi-unbash] ${configWarning}`);
@@ -650,11 +651,15 @@ export default function (pi: ExtensionAPI) {
     }
 
     const presetPolicies = resolvePresetPoliciesForConfigs(config, projectConfig);
-    if (presetPolicies.unknownPresetNames.length > 0 && ctx.hasUI) {
+    const newUnknownPresets = presetPolicies.unknownPresetNames.filter((name) =>
+      !warnedUnknownPresets.has(name)
+    );
+    if (newUnknownPresets.length > 0 && ctx.hasUI) {
       ctx.ui.notify(
-        `[pi-unbash] Unknown preset(s): ${presetPolicies.unknownPresetNames.join(", ")}`,
+        `[pi-unbash] Unknown preset(s): ${newUnknownPresets.join(", ")}`,
         "warning",
       );
+      for (const name of newUnknownPresets) warnedUnknownPresets.add(name);
     }
 
     const toolName = (event as { toolName?: unknown }).toolName;
