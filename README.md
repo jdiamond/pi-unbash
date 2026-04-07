@@ -103,9 +103,11 @@ Rules are evaluated in order: built-in defaults first, then your `rules` entries
 Actions:
 - `"allow"` — run silently without prompting
 - `"ask"` — prompt for approval (the default for anything unmatched)
+- `"deny"` — hard-block immediately with no approval UI override
 
 The special pattern `"*"` matches any command:
 - `"*": "allow"` — trust all commands globally (opt out of pi-unbash)
+- `"*": "deny"` — block all commands (maximum lock-down)
 
 Matching uses **subsequence logic** — the tokens in your rule must appear in order in the actual command, but extra flags and arguments anywhere in the sequence are permitted:
 
@@ -117,21 +119,20 @@ Matching uses **subsequence logic** — the tokens in your rule must appear in o
 | `"jira issue view"` | `jira issue view PROJ-123`, `jira issue view --verbose PROJ-123` | `jira issue create` |
 | `"terraform apply --dry-run"` | `terraform apply --dry-run`, `terraform apply -v --dry-run` | `terraform apply`, `terraform apply --force` |
 
-Because last-match-wins, you can override a broad default with a narrower rule:
+Because last-match-wins, you can override a broad rule with a narrower deny rule:
 
 ```json
 {
   "unbash": {
     "rules": {
-      "npm test": "allow",
       "git": "allow",
-      "git push": "ask"
+      "git push": "deny"
     }
   }
 }
 ```
 
-Here `git push` always prompts even though `git` (which would match all git commands) appears before it — the more specific entry comes last and wins.
+Here `git push` is hard-blocked even though `git` matches first — the later `git push` entry wins.
 
 ### Display Settings
 
@@ -161,9 +162,12 @@ The confirmation prompt elides long command arguments to keep the display readab
 
 You can manage settings dynamically mid-session using the `/unbash` command:
 
-* `/unbash allow <command>` - Permanently allow a command (e.g., `/unbash allow git` or `/unbash allow git status`)
+* `/unbash allow <command>` - Persist a global allow rule (e.g., `/unbash allow git`)
+* `/unbash deny <command>` - Persist a global deny rule (e.g., `/unbash deny git push`)
 * `/unbash toggle` - Turn the entire confirmation system on or off
 * `/unbash list` - Show current status, default rules, user rules (global), project rules, and session rules
+
+When updating an existing allow/deny rule via `/unbash`, that rule is moved to the end of the rule map so the newest change wins under last-match-wins ordering.
 
 ## License
 
