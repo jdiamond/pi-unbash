@@ -119,6 +119,22 @@ Matching uses **subsequence logic** — the tokens in your rule must appear in o
 | `"jira issue view"` | `jira issue view PROJ-123`, `jira issue view --verbose PROJ-123` | `jira issue create` |
 | `"terraform apply --dry-run"` | `terraform apply --dry-run`, `terraform apply -v --dry-run` | `terraform apply`, `terraform apply --force` |
 
+Rule matching is also **whitespace-normalized** before tokenization: leading/trailing whitespace is trimmed and repeated internal whitespace is collapsed. This mainly matters for hand-edited JSON config and makes manual edits behave the same way as `/unbash allow ...` and `/unbash deny ...`, which already normalize user-entered whitespace.
+
+For example, these rules behave the same:
+
+```json
+{
+  "unbash": {
+    "rules": {
+      "git   push": "deny"
+    }
+  }
+}
+```
+
+That entry matches `git push origin main` the same way as `"git push"`.
+
 Because last-match-wins, you can override a broad rule with a narrower deny rule:
 
 ```json
