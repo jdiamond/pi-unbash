@@ -1,21 +1,33 @@
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { isToolCallEventType } from "@mariozechner/pi-coding-agent";
 import { parse as parseBash } from "unbash";
-import * as fs from "node:fs";
-import * as path from "node:path";
-import * as os from "node:os";
-import { extractAllCommandsFromAST } from "./extract.ts";
-import { getCommandName, resolveCommandAction } from "./resolve.ts";
-import { formatCommand, FORMAT_COMMAND_DEFAULT_MAX_LENGTH, FORMAT_COMMAND_DEFAULT_ARG_MAX_LENGTH } from "./format.ts";
-import { buildApprovalPrompt } from "./prompt.ts";
 import { DEFAULT_RULES } from "./defaults.ts";
+import { extractAllCommandsFromAST } from "./extract.ts";
+import {
+  FORMAT_COMMAND_DEFAULT_ARG_MAX_LENGTH,
+  FORMAT_COMMAND_DEFAULT_MAX_LENGTH,
+  formatCommand,
+} from "./format.ts";
+import { buildApprovalPrompt } from "./prompt.ts";
+import {
+  getCommandName,
+  type RuleDecision,
+  type RuleLayers,
+  resolveCommandDecision,
+} from "./resolve.ts";
 
 const AGENT_DIR = path.join(os.homedir(), ".pi", "agent");
 const SETTINGS_PATH = path.join(AGENT_DIR, "settings.json");
 
+type PersistentRuleAction = "allow" | "ask" | "deny";
+type SessionRuleAction = "allow";
+
 interface UnbashConfig {
   enabled: boolean;
-  rules: Record<string, "allow" | "ask">;
+  rules: Record<string, PersistentRuleAction>;
   commandDisplayMaxLength: number;
   commandDisplayArgMaxLength: number;
 }
@@ -41,11 +53,35 @@ const SAFE_FALLBACK_CONFIG: UnbashConfig = {
 
 /** Merge default, user, project, and session rules. Later layers win. */
 export function buildEffectiveRules(
-  userRules: Record<string, "allow" | "ask">,
-  projectRules: Record<string, "allow" | "ask">,
-  sessionRules: Record<string, "allow" | "ask">,
-): Record<string, "allow" | "ask"> {
+  userRules: Record<string, PersistentRuleAction>,
+  projectRules: Record<string, PersistentRuleAction>,
+  sessionRules: Record<string, SessionRuleAction>,
+): Record<string, PersistentRuleAction> {
   return { ...DEFAULT_RULES, ...userRules, ...projectRules, ...sessionRules };
+}
+
+export function buildRuleLayers(
+  userRules: Record<string, PersistentRuleAction>,
+  projectRules: Record<string, PersistentRuleAction>,
+  sessionRules: Record<string, SessionRuleAction>,
+): RuleLayers {
+  return {
+    default: DEFAULT_RULES,
+    global: userRules,
+    project: projectRules,
+    session: sessionRules,
+  };
+}
+
+export function buildDeniedReason(
+  command: Parameters<typeof formatCommand>[0],
+  decision: RuleDecision,
+  options: { maxLength?: number; argMaxLength?: number },
+): string {
+  const preview = formatCommand(command, options);
+  const layer = decision.layer ?? "unknown";
+  const pattern = decision.pattern ?? "*";
+  return `Denied by ${layer} rule "${pattern}": ${preview}`;
 }
 
 /** Load project-level unbash config from .pi/settings.json in the given directory. */
@@ -62,7 +98,8 @@ function loadProjectConfig(cwd: string): LoadedConfigResult | null {
   } catch (e) {
     return {
       config: { ...SAFE_FALLBACK_CONFIG },
-      warning: "Failed to parse project .pi/settings.json; using safe fallback.",
+      warning:
+        "Failed to parse project .pi/settings.json; using safe fallback.",
     };
   }
 }
@@ -71,7 +108,8 @@ export function validateLoadedUnbashConfig(input: unknown): LoadedConfigResult {
   if (!input || typeof input !== "object") {
     return {
       config: { ...SAFE_FALLBACK_CONFIG },
-      warning: "Invalid unbash config shape; using safe fallback (enabled=true, rules={}).",
+      warning:
+        "Invalid unbash config shape; using safe fallback (enabled=true, rules={}).",
     };
   }
 
@@ -85,36 +123,57 @@ export function validateLoadedUnbashConfig(input: unknown): LoadedConfigResult {
     warnings.push("enabled must be a boolean");
   }
 
-  let rules: Record<string, "allow" | "ask"> = {};
+  let rules: Record<string, PersistentRuleAction> = {};
   if (cfg.rules !== undefined) {
-    if (cfg.rules && typeof cfg.rules === "object" && !Array.isArray(cfg.rules)) {
-      const validRules: Record<string, "allow" | "ask"> = {};
+    if (
+      cfg.rules &&
+      typeof cfg.rules === "object" &&
+      !Array.isArray(cfg.rules)
+    ) {
+      const validRules: Record<string, PersistentRuleAction> = {};
       let hasInvalid = false;
-      for (const [key, value] of Object.entries(cfg.rules as Record<string, unknown>)) {
-        if (typeof key === "string" && key.trim().length > 0 && (value === "allow" || value === "ask")) {
+      for (const [key, value] of Object.entries(
+        cfg.rules as Record<string, unknown>,
+      )) {
+        if (
+          typeof key === "string" &&
+          key.trim().length > 0 &&
+          (value === "allow" || value === "ask" || value === "deny")
+        ) {
           validRules[key] = value;
         } else {
           hasInvalid = true;
         }
       }
       if (hasInvalid) {
-        warnings.push('rules must be an object mapping non-empty strings to "allow" or "ask"');
+        warnings.push(
+          'rules must be an object mapping non-empty strings to "allow", "ask", or "deny"',
+        );
       }
       rules = validRules;
     } else {
-      warnings.push('rules must be an object mapping non-empty strings to "allow" or "ask"');
+      warnings.push(
+        'rules must be an object mapping non-empty strings to "allow", "ask", or "deny"',
+      );
     }
   }
 
   let commandDisplayMaxLength = SAFE_FALLBACK_CONFIG.commandDisplayMaxLength;
-  if (typeof cfg.commandDisplayMaxLength === "number" && cfg.commandDisplayMaxLength > 0) {
+  if (
+    typeof cfg.commandDisplayMaxLength === "number" &&
+    cfg.commandDisplayMaxLength > 0
+  ) {
     commandDisplayMaxLength = cfg.commandDisplayMaxLength;
   } else if (cfg.commandDisplayMaxLength !== undefined) {
     warnings.push("commandDisplayMaxLength must be a positive number");
   }
 
-  let commandDisplayArgMaxLength = SAFE_FALLBACK_CONFIG.commandDisplayArgMaxLength;
-  if (typeof cfg.commandDisplayArgMaxLength === "number" && cfg.commandDisplayArgMaxLength > 0) {
+  let commandDisplayArgMaxLength =
+    SAFE_FALLBACK_CONFIG.commandDisplayArgMaxLength;
+  if (
+    typeof cfg.commandDisplayArgMaxLength === "number" &&
+    cfg.commandDisplayArgMaxLength > 0
+  ) {
     commandDisplayArgMaxLength = cfg.commandDisplayArgMaxLength;
   } else if (cfg.commandDisplayArgMaxLength !== undefined) {
     warnings.push("commandDisplayArgMaxLength must be a positive number");
@@ -122,15 +181,29 @@ export function validateLoadedUnbashConfig(input: unknown): LoadedConfigResult {
 
   if (warnings.length > 0) {
     return {
-      config: { enabled, rules, commandDisplayMaxLength, commandDisplayArgMaxLength },
+      config: {
+        enabled,
+        rules,
+        commandDisplayMaxLength,
+        commandDisplayArgMaxLength,
+      },
       warning: `Invalid unbash config fields (${warnings.join("; ")}); using safe values for invalid fields.`,
     };
   }
 
-  return { config: { enabled, rules, commandDisplayMaxLength, commandDisplayArgMaxLength } };
+  return {
+    config: {
+      enabled,
+      rules,
+      commandDisplayMaxLength,
+      commandDisplayArgMaxLength,
+    },
+  };
 }
 
-export function getUnbashConfigFromSettings(input: unknown): LoadedConfigResult {
+export function getUnbashConfigFromSettings(
+  input: unknown,
+): LoadedConfigResult {
   if (!input || typeof input !== "object") {
     return { config: DEFAULT_CONFIG };
   }
@@ -153,7 +226,8 @@ function loadConfig(): LoadedConfigResult {
     } catch (e) {
       return {
         config: { ...SAFE_FALLBACK_CONFIG },
-        warning: "Failed to parse settings.json; using safe fallback (enabled=true, rules={}).",
+        warning:
+          "Failed to parse settings.json; using safe fallback (enabled=true, rules={}).",
       };
     }
   }
@@ -173,8 +247,14 @@ function saveConfig(config: UnbashConfig) {
     settings.unbash = {
       enabled: config.enabled,
       rules: config.rules,
-      ...(config.commandDisplayMaxLength !== FORMAT_COMMAND_DEFAULT_MAX_LENGTH && { commandDisplayMaxLength: config.commandDisplayMaxLength }),
-      ...(config.commandDisplayArgMaxLength !== FORMAT_COMMAND_DEFAULT_ARG_MAX_LENGTH && { commandDisplayArgMaxLength: config.commandDisplayArgMaxLength }),
+      ...(config.commandDisplayMaxLength !==
+        FORMAT_COMMAND_DEFAULT_MAX_LENGTH && {
+        commandDisplayMaxLength: config.commandDisplayMaxLength,
+      }),
+      ...(config.commandDisplayArgMaxLength !==
+        FORMAT_COMMAND_DEFAULT_ARG_MAX_LENGTH && {
+        commandDisplayArgMaxLength: config.commandDisplayArgMaxLength,
+      }),
     };
 
     fs.writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2), "utf-8");
@@ -183,7 +263,10 @@ function saveConfig(config: UnbashConfig) {
   }
 }
 
-export function parseUnbashArgs(args: string): { action: string; target: string } {
+export function parseUnbashArgs(args: string): {
+  action: string;
+  target: string;
+} {
   const trimmed = args.trim();
   if (!trimmed) return { action: "", target: "" };
 
@@ -193,11 +276,22 @@ export function parseUnbashArgs(args: string): { action: string; target: string 
   return { action, target };
 }
 
+export function upsertRuleAtEnd<T extends string>(
+  rules: Record<string, T>,
+  pattern: string,
+  action: T,
+): Record<string, T> {
+  const next = { ...rules };
+  delete next[pattern];
+  next[pattern] = action;
+  return next;
+}
+
 export default function (pi: ExtensionAPI) {
   const loaded = loadConfig();
-  let config = loaded.config;
+  const config = loaded.config;
   let configWarning = loaded.warning;
-  const sessionRules: Record<string, "allow" | "ask"> = {};
+  const sessionRules: Record<string, SessionRuleAction> = {};
 
   if (configWarning) {
     console.warn(`[pi-unbash] ${configWarning}`);
@@ -214,42 +308,57 @@ export default function (pi: ExtensionAPI) {
 
       const { action, target } = parseUnbashArgs(args);
 
-      if (action === "allow" && target) {
-        config.rules[target] = "allow";
+      if ((action === "allow" || action === "deny") && target) {
+        config.rules = upsertRuleAtEnd(config.rules, target, action);
         saveConfig(config);
-        ctx.ui.notify(`'${target}' added to allowed commands.`, "info");
+        ctx.ui.notify(`'${target}' set to ${action}.`, "info");
       } else if (action === "toggle") {
         config.enabled = !config.enabled;
         saveConfig(config);
-        ctx.ui.notify(`pi-unbash is now ${config.enabled ? "ENABLED" : "DISABLED"}`, "info");
+        ctx.ui.notify(
+          `pi-unbash is now ${config.enabled ? "ENABLED" : "DISABLED"}`,
+          "info",
+        );
       } else if (action === "list") {
         const defaultLines = Object.entries(DEFAULT_RULES)
           .map(([pattern, act]) => `  ${pattern}: ${act}`)
           .join("\n");
 
-        const userLines = Object.entries(config.rules).length > 0
-          ? Object.entries(config.rules).map(([pattern, act]) => `  ${pattern}: ${act}`).join("\n")
-          : "  (none)";
+        const userLines =
+          Object.entries(config.rules).length > 0
+            ? Object.entries(config.rules)
+                .map(([pattern, act]) => `  ${pattern}: ${act}`)
+                .join("\n")
+            : "  (none)";
 
         // Load project rules for display
         const projectResult = loadProjectConfig(ctx.cwd);
         const projectRules = projectResult?.config.rules ?? {};
-        const projectLines = Object.entries(projectRules).length > 0
-          ? Object.entries(projectRules).map(([pattern, act]) => `  ${pattern}: ${act}`).join("\n")
-          : "  (none)";
+        const projectLines =
+          Object.entries(projectRules).length > 0
+            ? Object.entries(projectRules)
+                .map(([pattern, act]) => `  ${pattern}: ${act}`)
+                .join("\n")
+            : "  (none)";
 
-        const sessionLines = Object.entries(sessionRules).length > 0
-          ? Object.entries(sessionRules).map(([pattern, act]) => `  ${pattern}: ${act}`).join("\n")
-          : "  (none)";
+        const sessionLines =
+          Object.entries(sessionRules).length > 0
+            ? Object.entries(sessionRules)
+                .map(([pattern, act]) => `  ${pattern}: ${act}`)
+                .join("\n")
+            : "  (none)";
 
         ctx.ui.notify(
           `pi-unbash: ${config.enabled ? "ENABLED" : "DISABLED"}\n\nDefault rules:\n${defaultLines}\n\nUser rules (global):\n${userLines}\n\nProject rules:\n${projectLines}\n\nSession rules:\n${sessionLines}`,
-          "info"
+          "info",
         );
       } else {
-        ctx.ui.notify("Usage: /unbash <allow|toggle|list> [command]", "warning");
+        ctx.ui.notify(
+          "Usage: /unbash <allow|deny|toggle|list> [command]",
+          "warning",
+        );
       }
-    }
+    },
   });
 
   // The core interception hook
@@ -270,13 +379,16 @@ export default function (pi: ExtensionAPI) {
       ast = parseBash(rawCmd);
     } catch (e) {
       if (!ctx.hasUI) {
-        return { block: true, reason: "Failed to parse bash AST. Command rejected for safety." };
+        return {
+          block: true,
+          reason: "Failed to parse bash AST. Command rejected for safety.",
+        };
       }
 
       pi.events.emit("nudge", { body: "Command needs approval" });
       const confirmed = await ctx.ui.confirm(
         "⚠️ Could Not Parse Command Safely",
-        "\nAllow anyway?"
+        "\nAllow anyway?",
       );
 
       if (!confirmed) {
@@ -288,18 +400,28 @@ export default function (pi: ExtensionAPI) {
 
     if (Array.isArray(ast.errors) && ast.errors.length > 0) {
       if (!ctx.hasUI) {
-        return { block: true, reason: "Bash AST contains parse errors. Command rejected for safety." };
+        return {
+          block: true,
+          reason:
+            "Bash AST contains parse errors. Command rejected for safety.",
+        };
       }
 
-      const firstError = ast.errors[0] ?? { message: "unknown parse error", pos: -1 };
+      const firstError = ast.errors[0] ?? {
+        message: "unknown parse error",
+        pos: -1,
+      };
       pi.events.emit("nudge", { body: "Command needs approval" });
       const confirmed = await ctx.ui.confirm(
         "⚠️ Command Parsed With Errors",
-        `\nFirst error: ${firstError.message} at ${firstError.pos}\n\nAllow anyway?`
+        `\nFirst error: ${firstError.message} at ${firstError.pos}\n\nAllow anyway?`,
       );
 
       if (!confirmed) {
-        return { block: true, reason: "User denied command with parse errors." };
+        return {
+          block: true,
+          reason: "User denied command with parse errors.",
+        };
       }
 
       return;
@@ -316,11 +438,26 @@ export default function (pi: ExtensionAPI) {
       ctx.ui.notify(`[pi-unbash] ${projectResult.warning}`, "warning");
     }
 
-    const effectiveRules = buildEffectiveRules(config.rules, projectRules, sessionRules);
+    const layers = buildRuleLayers(config.rules, projectRules, sessionRules);
+    const decisions = allCommands.map((command) => ({
+      command,
+      decision: resolveCommandDecision(command, layers),
+    }));
 
-    const unauthorizedCommands = allCommands.filter(
-      cmd => resolveCommandAction(cmd, effectiveRules) !== "allow"
-    );
+    const denied = decisions.find((entry) => entry.decision.action === "deny");
+    if (denied) {
+      return {
+        block: true,
+        reason: buildDeniedReason(denied.command, denied.decision, {
+          maxLength: config.commandDisplayMaxLength,
+          argMaxLength: config.commandDisplayArgMaxLength,
+        }),
+      };
+    }
+
+    const unauthorizedCommands = decisions
+      .filter((entry) => entry.decision.action === "ask")
+      .map((entry) => entry.command);
 
     if (unauthorizedCommands.length === 0) {
       return;
@@ -329,11 +466,13 @@ export default function (pi: ExtensionAPI) {
     if (!ctx.hasUI) {
       return {
         block: true,
-        reason: `Commands [${unauthorizedCommands.map(c => formatCommand(c, { maxLength: config.commandDisplayMaxLength, argMaxLength: config.commandDisplayArgMaxLength })).join(", ")}] require UI confirmation.`
+        reason: `Commands [${unauthorizedCommands.map((c) => formatCommand(c, { maxLength: config.commandDisplayMaxLength, argMaxLength: config.commandDisplayArgMaxLength })).join(", ")}] require UI confirmation.`,
       };
     }
 
-    const uniqueBaseNames = Array.from(new Set(unauthorizedCommands.map(getCommandName)));
+    const uniqueBaseNames = Array.from(
+      new Set(unauthorizedCommands.map(getCommandName)),
+    );
     const alwaysLabel = `Always allow ${uniqueBaseNames.join(", ")} (this session)`;
 
     pi.events.emit("nudge", { body: "Command needs approval" });
@@ -342,7 +481,7 @@ export default function (pi: ExtensionAPI) {
         maxLength: config.commandDisplayMaxLength,
         argMaxLength: config.commandDisplayArgMaxLength,
       }),
-      ["Allow", alwaysLabel, "Reject"]
+      ["Allow", alwaysLabel, "Reject"],
     );
 
     if (choice === alwaysLabel) {
