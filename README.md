@@ -57,7 +57,18 @@ Settings can be configured at two levels:
 1. **Global:** `~/.pi/agent/settings.json` — applies to all projects
 2. **Project:** `<project>/.pi/settings.json` — applies only to that project
 
-Project settings override global settings. Rules merge in order: defaults → global rules → project rules → session rules. Last match wins.
+Project settings override global settings where applicable.
+
+Policy precedence is:
+
+1. default allow rules
+2. global preset rules
+3. explicit global `rules`
+4. project preset rules
+5. explicit project `rules`
+6. session rules
+
+Last match wins.
 
 ### Global Settings
 
@@ -70,6 +81,20 @@ Settings are persisted globally in `~/.pi/agent/settings.json` under the `"unbas
   ],
   "unbash": {
     "enabled": true,
+    "presets": ["destructive-calls", "pi-bash-restrict"],
+    "customPresets": {
+      "my-team-safe-mode": {
+        "toolPolicies": {
+          "grep": "deny"
+        },
+        "guards": {
+          "redirects": "deny"
+        },
+        "rules": {
+          "git push": "deny"
+        }
+      }
+    },
     "rules": {
       "npm test": "allow"
     }
@@ -93,6 +118,31 @@ Project-level settings go in `.pi/settings.json` in your project root:
 ```
 
 Project settings override global settings and can be committed to version control to share with your team.
+
+### Presets
+
+`presets` is an ordered list of active preset names. Built-in presets:
+
+- `destructive-calls`
+- `pi-bash-restrict`
+
+`customPresets` lets you define your own named bundles. A preset can include:
+
+- `rules` (command patterns: `allow|ask|deny`)
+- `toolPolicies` (top-level tool policies: `allow|deny`)
+- `guards` (AST/shell construct policies: `allow|deny`)
+
+Global and project `presets` are concatenated in order (global first, then project). Global and project `customPresets` merge by name, with project definitions overriding same-name global definitions.
+
+Unknown preset names are ignored safely, surfaced as warnings, and shown in `/unbash preset list`.
+
+Runtime flow:
+
+1. tool policy phase (`toolPolicies`) — immediate allow/deny if matched
+2. fast command-rule phase — cheap top-level classification for `bash`
+3. AST guard phase (`guards`) — only if still unresolved (`ask`)
+
+Fast allow short-circuit is applied only to simple top-level command shapes. Inputs with shell composition syntax (for example command substitution, redirects, control operators, or grouping) continue to AST evaluation.
 
 ### Rules
 
@@ -182,6 +232,10 @@ You can manage settings dynamically mid-session using the `/unbash` command:
 * `/unbash deny <command>` - Persist a global deny rule (e.g., `/unbash deny git push`)
 * `/unbash toggle` - Turn the entire confirmation system on or off
 * `/unbash list` - Show current status, default rules, user rules (global), project rules, and session rules
+* `/unbash preset list` - Show built-ins, available custom presets, active preset order, explicit rule layers, unknown active presets
+* `/unbash preset add <name>` - Append a preset to the global active preset list
+* `/unbash preset remove <name>` - Remove all matching occurrences from the global active preset list
+* `/unbash preset clear` - Clear the global active preset list
 
 When updating an existing allow/deny rule via `/unbash`, that rule is moved to the end of the rule map so the newest change wins under last-match-wins ordering.
 
