@@ -46,15 +46,30 @@ test("parseUnbashArgs", async (t) => {
 test("upsertRuleAtEnd", async (t) => {
 	await t.test("moves existing rule to the end with updated action", () => {
 		assert.deepEqual(
-			upsertRuleAtEnd({ "git": "allow", "git push": "ask" }, "git", "deny"),
-			{ "git push": "ask", "git": "deny" },
+			upsertRuleAtEnd({ git: "allow", "git push": "ask" }, "git", "deny"),
+			{ "git push": "ask", git: "deny" },
 		);
 	});
 
 	await t.test("inserts a brand-new rule at the end", () => {
-		assert.deepEqual(
-			upsertRuleAtEnd({ "git": "allow" }, "git push", "deny"),
-			{ "git": "allow", "git push": "deny" },
-		);
+		assert.deepEqual(upsertRuleAtEnd({ git: "allow" }, "git push", "deny"), {
+			git: "allow",
+			"git push": "deny",
+		});
 	});
+
+	await t.test(
+		"keeps distinct whitespace-variant keys and appends latest update",
+		() => {
+			// Intentional: matcher normalization handles semantic equivalence at runtime,
+			// while persisted rule keys preserve original user input + insertion order.
+			const initial = { "git   push": "allow" as const };
+			const result = upsertRuleAtEnd(initial, "git push", "deny");
+
+			assert.deepEqual(result, {
+				"git   push": "allow",
+				"git push": "deny",
+			});
+		},
+	);
 });
