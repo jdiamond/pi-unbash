@@ -247,6 +247,17 @@ export function parseUnbashArgs(args: string): {
 	return { action, target };
 }
 
+export function upsertRuleAtEnd<T extends string>(
+	rules: Record<string, T>,
+	pattern: string,
+	action: T,
+): Record<string, T> {
+	const next = { ...rules };
+	delete next[pattern];
+	next[pattern] = action;
+	return next;
+}
+
 export default function (pi: ExtensionAPI) {
 	const loaded = loadConfig();
 	const config = loaded.config;
@@ -268,10 +279,10 @@ export default function (pi: ExtensionAPI) {
 
 			const { action, target } = parseUnbashArgs(args);
 
-			if (action === "allow" && target) {
-				config.rules[target] = "allow";
+			if ((action === "allow" || action === "deny") && target) {
+				config.rules = upsertRuleAtEnd(config.rules, target, action);
 				saveConfig(config);
-				ctx.ui.notify(`'${target}' added to allowed commands.`, "info");
+				ctx.ui.notify(`'${target}' set to ${action}.`, "info");
 			} else if (action === "toggle") {
 				config.enabled = !config.enabled;
 				saveConfig(config);
@@ -314,7 +325,7 @@ export default function (pi: ExtensionAPI) {
 				);
 			} else {
 				ctx.ui.notify(
-					"Usage: /unbash <allow|toggle|list> [command]",
+					"Usage: /unbash <allow|deny|toggle|list> [command]",
 					"warning",
 				);
 			}
