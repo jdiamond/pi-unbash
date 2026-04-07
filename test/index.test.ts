@@ -216,3 +216,83 @@ test("tool_call deny returns in headless mode without prompt UI", async () => {
     }
   }
 });
+
+test("guard deny blocks even when command rule allows", async () => {
+  const originalHome = process.env.HOME;
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "pi-unbash-home-"));
+  const tempProject = fs.mkdtempSync(
+    path.join(os.tmpdir(), "pi-unbash-project-"),
+  );
+
+  try {
+    fs.mkdirSync(path.join(tempProject, ".pi"), { recursive: true });
+    fs.writeFileSync(
+      path.join(tempProject, ".pi", "settings.json"),
+      JSON.stringify(
+        {
+          unbash: {
+            rules: {
+              echo: "allow",
+            },
+            presets: ["pi-bash-restrict"],
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    const extension = await loadFreshExtension(tempHome);
+
+    let toolCallHandler: ((event: any, ctx: any) => Promise<any>) | undefined;
+
+    extension({
+      registerCommand() {},
+      on(event: string, handler: any) {
+        if (event === "tool_call") toolCallHandler = handler;
+      },
+      events: {
+        emit() {},
+      },
+    } as any);
+
+    assert.ok(
+      toolCallHandler,
+      "expected extension to register tool_call handler",
+    );
+
+    const result = await toolCallHandler!(
+      {
+        type: "tool_call",
+        toolCallId: "tc-guard-precedence",
+        toolName: "bash",
+        input: { command: "echo $(whoami)" },
+      },
+      {
+        hasUI: false,
+        cwd: tempProject,
+        ui: {
+          notify() {},
+          async confirm() {
+            return true;
+          },
+          async select() {
+            return "Allow";
+          },
+        },
+      },
+    );
+
+    assert.deepEqual(result, {
+      block: true,
+      reason:
+        'Denied by guard policy "command-substitution" in preset "pi-bash-restrict": echo $(whoami)',
+    });
+  } finally {
+    if (originalHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = originalHome;
+    }
+  }
+});
