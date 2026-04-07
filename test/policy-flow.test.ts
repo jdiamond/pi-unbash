@@ -324,3 +324,82 @@ test("fast allow precheck does not bypass nested deny in command substitution", 
     else process.env.HOME = originalHome;
   }
 });
+
+test("unknown preset warning is shown once per session", async () => {
+  const originalHome = process.env.HOME;
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "pi-unbash-home-"));
+
+  try {
+    fs.mkdirSync(path.join(tempHome, ".pi", "agent"), { recursive: true });
+    fs.writeFileSync(
+      path.join(tempHome, ".pi", "agent", "settings.json"),
+      JSON.stringify(
+        {
+          unbash: {
+            presets: ["missing-preset"],
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    const extension = await loadFreshExtension(tempHome);
+    let toolCallHandler: ((event: any, ctx: any) => Promise<any>) | undefined;
+    const notifications: string[] = [];
+
+    extension({
+      registerCommand() {},
+      on(event: string, handler: any) {
+        if (event === "tool_call") toolCallHandler = handler;
+      },
+      events: { emit() {} },
+    } as any);
+
+    assert.ok(toolCallHandler);
+
+    const ctx = {
+      hasUI: true,
+      cwd: process.cwd(),
+      ui: {
+        notify(message: string) {
+          notifications.push(message);
+        },
+        async confirm() {
+          return true;
+        },
+        async select() {
+          return "Allow";
+        },
+      },
+    };
+
+    await toolCallHandler!(
+      {
+        type: "tool_call",
+        toolCallId: "tc-unknown-preset-1",
+        toolName: "grep",
+        input: { pattern: "TODO" },
+      },
+      ctx,
+    );
+
+    await toolCallHandler!(
+      {
+        type: "tool_call",
+        toolCallId: "tc-unknown-preset-2",
+        toolName: "grep",
+        input: { pattern: "FIXME" },
+      },
+      ctx,
+    );
+
+    const warningMessages = notifications.filter((m) =>
+      m.includes("Unknown preset(s): missing-preset")
+    );
+    assert.equal(warningMessages.length, 1);
+  } finally {
+    if (originalHome === undefined) delete process.env.HOME;
+    else process.env.HOME = originalHome;
+  }
+});
