@@ -208,7 +208,7 @@ test("AST guards deny unresolved guarded constructs", async () => {
   }
 });
 
-test("AST guards are skipped when fast rule phase resolves allow", async () => {
+test("AST guards deny even when fast rule phase resolves allow", async () => {
   const originalHome = process.env.HOME;
   const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "pi-unbash-home-"));
 
@@ -258,7 +258,10 @@ test("AST guards are skipped when fast rule phase resolves allow", async () => {
       },
     );
 
-    assert.equal(result, undefined);
+    assert.deepEqual(result, {
+      block: true,
+      reason: 'Denied by guard policy "redirects" (preset).',
+    });
   } finally {
     if (originalHome === undefined) {
       delete process.env.HOME;
