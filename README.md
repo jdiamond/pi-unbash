@@ -57,7 +57,18 @@ Settings can be configured at two levels:
 1. **Global:** `~/.pi/agent/settings.json` — applies to all projects
 2. **Project:** `<project>/.pi/settings.json` — applies only to that project
 
-Project settings override global settings. Rules merge in order: defaults → global rules → project rules → session rules. Last match wins.
+Project settings override global settings where applicable.
+
+Policy precedence is:
+
+1. default allow rules
+2. global preset rules
+3. explicit global `rules`
+4. project preset rules
+5. explicit project `rules`
+6. session rules
+
+Last match wins.
 
 ### Global Settings
 
@@ -70,6 +81,20 @@ Settings are persisted globally in `~/.pi/agent/settings.json` under the `"unbas
   ],
   "unbash": {
     "enabled": true,
+    "presets": ["destructive-calls", "pi-bash-restrict"],
+    "customPresets": {
+      "my-team-safe-mode": {
+        "toolPolicies": {
+          "grep": "deny"
+        },
+        "guards": {
+          "redirects": "deny"
+        },
+        "rules": {
+          "git push": "deny"
+        }
+      }
+    },
     "rules": {
       "npm test": "allow"
     }
@@ -94,6 +119,31 @@ Project-level settings go in `.pi/settings.json` in your project root:
 
 Project settings override global settings and can be committed to version control to share with your team.
 
+### Presets
+
+`presets` is an ordered list of active preset names. Built-in presets:
+
+- `destructive-calls`
+- `pi-bash-restrict`
+
+`customPresets` lets you define your own named bundles. A preset can include:
+
+- `rules` (command patterns: `allow|ask|deny`)
+- `toolPolicies` (top-level tool policies: `allow|deny`)
+- `guards` (AST/shell construct policies: `allow|deny`)
+
+Global and project `presets` are concatenated in order (global first, then project). Global and project `customPresets` merge by name, with project definitions overriding same-name global definitions.
+
+Unknown preset names are ignored safely, surfaced as warnings, and shown in `/unbash preset list`.
+
+Runtime flow:
+
+1. tool policy phase (`toolPolicies`) — immediate allow/deny if matched
+2. fast command-rule phase — cheap top-level classification for `bash`
+3. AST guard phase (`guards`) — only if still unresolved (`ask`)
+
+Fast allow short-circuit is applied only to simple top-level command shapes. Inputs with shell composition syntax (for example command substitution, redirects, control operators, or grouping) continue to AST evaluation.
+
 ### Rules
 
 The `rules` object maps command patterns to actions. Only your personal overrides go here — the built-in defaults (see [`src/defaults.ts`](src/defaults.ts)) are always applied first and never written to disk, so you automatically benefit from future default updates.
@@ -103,9 +153,11 @@ Rules are evaluated in order: built-in defaults first, then your `rules` entries
 Actions:
 - `"allow"` — run silently without prompting
 - `"ask"` — prompt for approval (the default for anything unmatched)
+- `"deny"` — hard-block immediately with no approval UI override
 
 The special pattern `"*"` matches any command:
 - `"*": "allow"` — trust all commands globally (opt out of pi-unbash)
+- `"*": "deny"` — block all commands (maximum lock-down)
 
 Matching uses **subsequence logic** — the tokens in your rule must appear in order in the actual command, but extra flags and arguments anywhere in the sequence are permitted:
 
@@ -117,21 +169,36 @@ Matching uses **subsequence logic** — the tokens in your rule must appear in o
 | `"jira issue view"` | `jira issue view PROJ-123`, `jira issue view --verbose PROJ-123` | `jira issue create` |
 | `"terraform apply --dry-run"` | `terraform apply --dry-run`, `terraform apply -v --dry-run` | `terraform apply`, `terraform apply --force` |
 
-Because last-match-wins, you can override a broad default with a narrower rule:
+Rule matching is also **whitespace-normalized** before tokenization: leading/trailing whitespace is trimmed and repeated internal whitespace is collapsed. This mainly matters for hand-edited JSON config and makes manual edits behave the same way as `/unbash allow ...` and `/unbash deny ...`, which already normalize user-entered whitespace.
+
+For example, these rules behave the same:
 
 ```json
 {
   "unbash": {
     "rules": {
-      "npm test": "allow",
-      "git": "allow",
-      "git push": "ask"
+      "git   push": "deny"
     }
   }
 }
 ```
 
-Here `git push` always prompts even though `git` (which would match all git commands) appears before it — the more specific entry comes last and wins.
+That entry matches `git push origin main` the same way as `"git push"`.
+
+Because last-match-wins, you can override a broad rule with a narrower deny rule:
+
+```json
+{
+  "unbash": {
+    "rules": {
+      "git": "allow",
+      "git push": "deny"
+    }
+  }
+}
+```
+
+Here `git push` is hard-blocked even though `git` matches first — the later `git push` entry wins.
 
 ### Display Settings
 
@@ -161,9 +228,16 @@ The confirmation prompt elides long command arguments to keep the display readab
 
 You can manage settings dynamically mid-session using the `/unbash` command:
 
-* `/unbash allow <command>` - Permanently allow a command (e.g., `/unbash allow git` or `/unbash allow git status`)
+* `/unbash allow <command>` - Persist a global allow rule (e.g., `/unbash allow git`)
+* `/unbash deny <command>` - Persist a global deny rule (e.g., `/unbash deny git push`)
 * `/unbash toggle` - Turn the entire confirmation system on or off
 * `/unbash list` - Show current status, default rules, user rules (global), project rules, and session rules
+* `/unbash preset list` - Show built-ins, available custom presets, active preset order, explicit rule layers, unknown active presets
+* `/unbash preset add <name>` - Append a preset to the global active preset list
+* `/unbash preset remove <name>` - Remove all matching occurrences from the global active preset list
+* `/unbash preset clear` - Clear the global active preset list
+
+When updating an existing allow/deny rule via `/unbash`, that rule is moved to the end of the rule map so the newest change wins under last-match-wins ordering.
 
 ## License
 

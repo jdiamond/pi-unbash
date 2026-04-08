@@ -1,7 +1,7 @@
 {
-  "name": "pi-unbash",
+  "name": "pi-restrict-unbash",
   "version": "2.0.0",
-  "description": "A highly secure bash confirmation extension for pi, using the unbash AST parser to perfectly intercept subshells and logic gates.",
+  "description": "Opinionated restrictions using pi-unbash for Pi’s built-in bash tool.",
   "keywords": [
     "pi-package",
     "bash",
@@ -41,6 +41,7 @@
     "@mariozechner/pi-coding-agent": "*"
   },
   "devDependencies": {
-    "@mariozechner/pi-coding-agent": "*"
+    "@mariozechner/pi-coding-agent": "*",
+    "typescript": "^6.0.2"
   }
 }

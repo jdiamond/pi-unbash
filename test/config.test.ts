@@ -1,69 +1,211 @@
-import { test } from "node:test";
 import assert from "node:assert/strict";
-import { getUnbashConfigFromSettings, validateLoadedUnbashConfig, buildEffectiveRules } from "../src/index.ts";
-import { FORMAT_COMMAND_DEFAULT_MAX_LENGTH, FORMAT_COMMAND_DEFAULT_ARG_MAX_LENGTH } from "../src/format.ts";
+import { test } from "node:test";
 import { DEFAULT_RULES } from "../src/defaults.ts";
+import {
+  FORMAT_COMMAND_DEFAULT_ARG_MAX_LENGTH,
+  FORMAT_COMMAND_DEFAULT_MAX_LENGTH,
+} from "../src/format.ts";
+import {
+  buildEffectiveRules,
+  getUnbashConfigFromSettings,
+  resolvePresetPoliciesForConfigs,
+  validateLoadedUnbashConfig,
+} from "../src/index.ts";
 
-const displayDefaults = {
+const configDefaults = {
+  presets: [],
+  customPresets: {},
   commandDisplayMaxLength: FORMAT_COMMAND_DEFAULT_MAX_LENGTH,
   commandDisplayArgMaxLength: FORMAT_COMMAND_DEFAULT_ARG_MAX_LENGTH,
 };
 
 test("validateLoadedUnbashConfig", async (t) => {
   await t.test("accepts valid config with rules", () => {
-    const result = validateLoadedUnbashConfig({ enabled: false, rules: { "git": "allow", "curl": "ask" } });
-    assert.deepEqual(result.config, { enabled: false, rules: { "git": "allow", "curl": "ask" }, ...displayDefaults });
+    const result = validateLoadedUnbashConfig({
+      enabled: false,
+      rules: { git: "allow", curl: "ask", "git push": "deny" },
+    });
+    assert.deepEqual(result.config, {
+      enabled: false,
+      rules: { git: "allow", curl: "ask", "git push": "deny" },
+      ...configDefaults,
+    });
     assert.equal(result.warning, undefined);
   });
 
   await t.test("accepts valid config with empty rules", () => {
     const result = validateLoadedUnbashConfig({ enabled: true, rules: {} });
-    assert.deepEqual(result.config, { enabled: true, rules: {}, ...displayDefaults });
+    assert.deepEqual(result.config, {
+      enabled: true,
+      rules: {},
+      ...configDefaults,
+    });
     assert.equal(result.warning, undefined);
   });
 
   await t.test("accepts valid config with no rules field", () => {
     const result = validateLoadedUnbashConfig({ enabled: true });
-    assert.deepEqual(result.config, { enabled: true, rules: {}, ...displayDefaults });
+    assert.deepEqual(result.config, {
+      enabled: true,
+      rules: {},
+      ...configDefaults,
+    });
     assert.equal(result.warning, undefined);
   });
 
   await t.test("uses safe fallback for invalid top-level shape", () => {
     const result = validateLoadedUnbashConfig("bad");
-    assert.deepEqual(result.config, { enabled: true, rules: {}, ...displayDefaults });
+    assert.deepEqual(result.config, {
+      enabled: true,
+      rules: {},
+      ...configDefaults,
+    });
     assert.ok(result.warning);
   });
 
   await t.test("recovers valid enabled when rules is invalid", () => {
     const result = validateLoadedUnbashConfig({ enabled: false, rules: 42 });
-    assert.deepEqual(result.config, { enabled: false, rules: {}, ...displayDefaults });
+    assert.deepEqual(result.config, {
+      enabled: false,
+      rules: {},
+      ...configDefaults,
+    });
     assert.ok(result.warning?.includes("rules"));
   });
 
   await t.test("drops invalid rules entries and keeps valid ones", () => {
     const result = validateLoadedUnbashConfig({
       enabled: true,
-      rules: { "git": "allow", "curl": "deny", "ls": 123, "": "allow", "rg": "ask" },
+      rules: { git: "allow", curl: "denyx", ls: 123, "": "allow", rg: "ask" },
     });
     assert.deepEqual(result.config, {
       enabled: true,
-      rules: { "git": "allow", "rg": "ask" },
-      ...displayDefaults,
+      rules: { git: "allow", rg: "ask" },
+      ...configDefaults,
     });
     assert.ok(result.warning?.includes("rules"));
   });
 
+  await t.test("accepts preset config fields", () => {
+    const result = validateLoadedUnbashConfig({
+      enabled: true,
+      presets: ["destructive-calls", "pi-bash-restrict"],
+      customPresets: {
+        "my-safe-mode": {
+          toolPolicies: { grep: "deny" },
+          guards: { redirects: "deny" },
+          rules: { "git push": "deny", git: "ask" },
+        },
+      },
+      rules: { git: "allow" },
+      commandDisplayMaxLength: 80,
+      commandDisplayArgMaxLength: 30,
+    });
+
+    assert.deepEqual(result.config.presets, [
+      "destructive-calls",
+      "pi-bash-restrict",
+    ]);
+    assert.deepEqual(result.config.customPresets, {
+      "my-safe-mode": {
+        toolPolicies: { grep: "deny" },
+        guards: { redirects: "deny" },
+        rules: { "git push": "deny", git: "ask" },
+      },
+    });
+    assert.equal(result.warning, undefined);
+  });
+
+  await t.test("normalizes preset names by trimming surrounding whitespace", () => {
+    const result = validateLoadedUnbashConfig({
+      enabled: true,
+      presets: [" pi-bash-restrict ", "destructive-calls"],
+      rules: {},
+    });
+
+    assert.deepEqual(result.config.presets, [
+      "pi-bash-restrict",
+      "destructive-calls",
+    ]);
+    assert.equal(result.warning, undefined);
+  });
+
+  await t.test("drops invalid preset config fields while keeping valid entries", () => {
+    const result = validateLoadedUnbashConfig({
+      enabled: true,
+      presets: ["destructive-calls", 123, "", "pi-bash-restrict"],
+      customPresets: {
+        valid: {
+          toolPolicies: { grep: "deny", ls: "allow", bad: "ask" },
+          guards: { redirects: "deny", broken: "ask" },
+          rules: { "git push": "deny", nope: "invalid" },
+        },
+        broken: 42,
+      },
+      rules: {},
+    });
+
+    assert.deepEqual(result.config.presets, [
+      "destructive-calls",
+      "pi-bash-restrict",
+    ]);
+    assert.deepEqual(result.config.customPresets, {
+      valid: {
+        toolPolicies: { grep: "deny", ls: "allow" },
+        guards: { redirects: "deny" },
+        rules: { "git push": "deny" },
+      },
+    });
+    assert.ok(result.warning?.includes("presets"));
+    assert.ok(result.warning?.includes("customPresets"));
+  });
+
+  await t.test("invalid custom guard keys are dropped with validation warning", () => {
+    const result = validateLoadedUnbashConfig({
+      enabled: true,
+      customPresets: {
+        team: {
+          guards: { "command-subsitution": "deny", redirects: "deny" },
+        },
+      },
+      rules: {},
+    });
+
+    assert.deepEqual(result.config.customPresets, {
+      team: {
+        guards: { redirects: "deny" },
+      },
+    });
+    assert.ok(result.warning?.includes("customPresets"));
+  });
+
   await t.test("accepts custom display settings", () => {
-    const result = validateLoadedUnbashConfig({ enabled: true, rules: {}, commandDisplayMaxLength: 80, commandDisplayArgMaxLength: 30 });
+    const result = validateLoadedUnbashConfig({
+      enabled: true,
+      rules: {},
+      commandDisplayMaxLength: 80,
+      commandDisplayArgMaxLength: 30,
+    });
     assert.equal(result.config.commandDisplayMaxLength, 80);
     assert.equal(result.config.commandDisplayArgMaxLength, 30);
     assert.equal(result.warning, undefined);
   });
 
   await t.test("rejects invalid display settings", () => {
-    const result = validateLoadedUnbashConfig({ enabled: true, rules: {}, commandDisplayMaxLength: "big", commandDisplayArgMaxLength: -1 });
-    assert.equal(result.config.commandDisplayMaxLength, FORMAT_COMMAND_DEFAULT_MAX_LENGTH);
-    assert.equal(result.config.commandDisplayArgMaxLength, FORMAT_COMMAND_DEFAULT_ARG_MAX_LENGTH);
+    const result = validateLoadedUnbashConfig({
+      enabled: true,
+      rules: {},
+      commandDisplayMaxLength: "big",
+      commandDisplayArgMaxLength: -1,
+    });
+    assert.equal(
+      result.config.commandDisplayMaxLength,
+      FORMAT_COMMAND_DEFAULT_MAX_LENGTH,
+    );
+    assert.equal(
+      result.config.commandDisplayArgMaxLength,
+      FORMAT_COMMAND_DEFAULT_ARG_MAX_LENGTH,
+    );
     assert.ok(result.warning);
   });
 });
@@ -71,15 +213,26 @@ test("validateLoadedUnbashConfig", async (t) => {
 test("getUnbashConfigFromSettings", async (t) => {
   await t.test("uses empty rules when the unbash key is missing", () => {
     const result = getUnbashConfigFromSettings({ other: true });
-    assert.deepEqual(result.config, { enabled: true, rules: {}, ...displayDefaults });
+    assert.deepEqual(result.config, {
+      enabled: true,
+      rules: {},
+      ...configDefaults,
+    });
     assert.equal(result.warning, undefined);
   });
 
-  await t.test("validates a falsey unbash value instead of falling back to defaults", () => {
-    const result = getUnbashConfigFromSettings({ unbash: null });
-    assert.deepEqual(result.config, { enabled: true, rules: {}, ...displayDefaults });
-    assert.ok(result.warning);
-  });
+  await t.test(
+    "validates a falsey unbash value instead of falling back to defaults",
+    () => {
+      const result = getUnbashConfigFromSettings({ unbash: null });
+      assert.deepEqual(result.config, {
+        enabled: true,
+        rules: {},
+        ...configDefaults,
+      });
+      assert.ok(result.warning);
+    },
+  );
 });
 
 test("DEFAULT_RULES", async (t) => {
@@ -100,60 +253,124 @@ test("DEFAULT_RULES", async (t) => {
 });
 
 test("buildEffectiveRules", async (t) => {
-  await t.test("defaults alone when user, project, and session rules are empty", () => {
-    const result = buildEffectiveRules({}, {}, {});
-    assert.deepEqual(result, DEFAULT_RULES);
-  });
+  await t.test(
+    "defaults alone when user, project, and session rules are empty",
+    () => {
+      const result = buildEffectiveRules({}, {}, {});
+      assert.deepEqual(result, DEFAULT_RULES);
+    },
+  );
 
   await t.test("user rules are appended after defaults", () => {
-    const result = buildEffectiveRules({ "mytool": "allow" }, {}, {});
+    const result = buildEffectiveRules({ mytool: "allow" }, {}, {});
     assert.equal(result["mytool"], "allow");
     assert.equal(result["cat"], "allow");
   });
 
   await t.test("user rules override defaults for the same pattern", () => {
-    const result = buildEffectiveRules({ "cat": "ask" }, {}, {});
+    const result = buildEffectiveRules({ cat: "ask" }, {}, {});
     assert.equal(result["cat"], "ask");
   });
 
   await t.test("project rules are appended after user rules", () => {
-    const result = buildEffectiveRules({}, { "docker": "allow" }, {});
+    const result = buildEffectiveRules({}, { docker: "allow" }, {});
     assert.equal(result["docker"], "allow");
   });
 
   await t.test("project rules override user rules for the same pattern", () => {
-    const result = buildEffectiveRules({ "npm": "ask" }, { "npm": "allow" }, {});
+    const result = buildEffectiveRules({ npm: "ask" }, { npm: "allow" }, {});
     assert.equal(result["npm"], "allow");
   });
 
   await t.test("session rules are appended after project rules", () => {
-    const result = buildEffectiveRules({}, {}, { "kubectl": "allow" });
+    const result = buildEffectiveRules({}, {}, { kubectl: "allow" });
     assert.equal(result["kubectl"], "allow");
   });
 
-  await t.test("session rules override project rules for the same pattern", () => {
-    const result = buildEffectiveRules({}, { "npm": "ask" }, { "npm": "allow" });
-    assert.equal(result["npm"], "allow");
+  await t.test("deny is preserved in effective rules", () => {
+    const result = buildEffectiveRules(
+      { git: "allow" },
+      { "git push": "deny" },
+      {},
+    );
+    assert.equal(result["git push"], "deny");
   });
 
+  await t.test(
+    "session rules override project rules for the same pattern",
+    () => {
+      const result = buildEffectiveRules({}, { npm: "ask" }, { npm: "allow" });
+      assert.equal(result["npm"], "allow");
+    },
+  );
+
   await t.test("session rules override user rules for the same pattern", () => {
-    const result = buildEffectiveRules({ "npm": "ask" }, {}, { "npm": "allow" });
+    const result = buildEffectiveRules({ npm: "ask" }, {}, { npm: "allow" });
     assert.equal(result["npm"], "allow");
   });
 
   await t.test("session rules override defaults for the same pattern", () => {
-    const result = buildEffectiveRules({}, {}, { "cat": "ask" });
-    assert.equal(result["cat"], "ask");
+    const result = buildEffectiveRules({}, {}, { cat: "allow" });
+    assert.equal(result["cat"], "allow");
   });
 
-  await t.test("all four layers merge in order (defaults < user < project < session)", () => {
-    const result = buildEffectiveRules({ "git": "ask" }, { "git": "allow" }, {});
-    assert.equal(result["git"], "allow");
-  });
+  await t.test(
+    "all four layers merge in order (defaults < user < project < session)",
+    () => {
+      const result = buildEffectiveRules({ git: "ask" }, { git: "allow" }, {});
+      assert.equal(result["git"], "allow");
+    },
+  );
 
   await t.test("project and session both override user", () => {
-    const result = buildEffectiveRules({ "git": "ask" }, { "git": "allow" }, { "curl": "allow" });
+    const result = buildEffectiveRules(
+      { git: "ask" },
+      { git: "allow" },
+      { curl: "allow" },
+    );
     assert.equal(result["git"], "allow");
     assert.equal(result["curl"], "allow");
+  });
+
+  await t.test("preset rules layer before explicit rules", () => {
+    const result = buildEffectiveRules(
+      { git: "allow" },
+      { "git push": "ask" },
+      {},
+      {
+        globalPresetRules: { git: "deny" },
+        projectPresetRules: { "git push": "deny" },
+      },
+    );
+
+    assert.equal(result.git, "allow");
+    assert.equal(result["git push"], "ask");
+  });
+});
+
+test("resolvePresetPoliciesForConfigs", async (t) => {
+  await t.test("resolves global/project preset layers and unknown names", () => {
+    const result = resolvePresetPoliciesForConfigs(
+      {
+        presets: ["destructive-calls", "team"],
+        customPresets: {
+          team: {
+            rules: { git: "ask" },
+            toolPolicies: { grep: "deny" },
+          },
+        },
+      },
+      {
+        presets: ["pi-bash-restrict", "missing"],
+        customPresets: {},
+      },
+    );
+
+    assert.equal(result.globalPresetRules["rm -rf /"], "deny");
+    assert.equal(result.globalPresetRules.git, "ask");
+    assert.equal(result.projectPresetRules["git push"], "deny");
+    assert.equal(result.toolPolicies.grep, "deny");
+    assert.equal(result.guards.redirects, "deny");
+    assert.deepEqual(result.unknownPresetNames, ["missing"]);
   });
 });
