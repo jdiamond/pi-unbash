@@ -58,9 +58,18 @@ export function resolveCommandDecision(
   cmd: CommandRef,
   layers: RuleLayers,
 ): RuleDecision {
-  const name = getCommandName(cmd);
-  const args = getCommandArgs(cmd);
+  return resolveCommandDecisionFromTokens(
+    getCommandName(cmd),
+    getCommandArgs(cmd),
+    layers,
+  );
+}
 
+export function resolveCommandDecisionFromTokens(
+  name: string,
+  args: string[],
+  layers: RuleLayers,
+): RuleDecision {
   let result: RuleDecision = { action: "ask" };
 
   for (const layer of ["default", "global", "project", "session"] as const) {
