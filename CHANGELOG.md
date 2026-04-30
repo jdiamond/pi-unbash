@@ -2,7 +2,9 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [2.0.0] - 2026-04-29
+
+> **Deprecated.** This is the final release. pi-unbash has been superseded by **[pi-guard](https://github.com/jdiamond/pi-guard)**. Please migrate.
 
 ### Added
 - Emits a `nudge` event via `pi.events` before each approval prompt so extensions like [`pi-nudge`](https://github.com/jdiamond/pi-nudge) can send a native notification when a command needs approval.
@@ -10,6 +12,11 @@ All notable changes to this project will be documented in this file.
 - Extract commands inside arithmetic expressions (`$(( $(cmd) ))` and `(( $(cmd) ))`). Previously these were missed, allowing commands like `npm` inside `echo $(( $(npm --version) + 1 ))` to bypass approval.
 
 ### Changed
+- **Breaking:** Replaced `alwaysAllowed: string[]` with `rules: Record<string, "allow" | "ask">` in `settings.json`. The new format stores only user-defined overrides — default rules are never written to disk, so updates to the built-in defaults are automatically picked up.
+- Default rules are now defined as a `Record<string, "allow" | "ask">` in `src/defaults.ts` and merged with user rules at load time. User rules are appended last so they win (last-match-wins evaluation in insertion order).
+- The special pattern `"*"` matches any command, allowing rules like `"*": "allow"` to trust all commands globally.
+- `/unbash deny` has been removed. Use `rules` directly in `settings.json` to remove a default rule.
+- `isCommandAllowed` replaced by `resolveCommandAction`, which returns `"allow" | "ask"` instead of a boolean.
 - Approval prompts now show the full extracted command sequence with status markers: `✔` for commands already allowed and `✖` for commands that still need approval. This preserves context for compound shell commands like `cd /path && npx tsc --noEmit` while keeping attention on the unapproved steps.
 - `/unbash list` now shows four rule layers: default, user (global), project, and session.
 - Dependency updated to `jdiamond/unbash#combined-fixes` (fork) which fixes:
@@ -17,16 +24,6 @@ All notable changes to this project will be documented in this file.
   - Unquoted heredoc bodies now properly expose `body.parts` with parsed expansions
   - Single-quoted strings with newlines no longer incorrectly flag embedded `$(...)` as commands
 - Removed heredoc workaround code (`collectCommandsFromShellText` and related functions) now that unbash properly exposes heredoc body structure.
-
-## [2.0.0] - 2026-03-15
-
-### Changed
-- **Breaking:** Replaced `alwaysAllowed: string[]` with `rules: Record<string, "allow" | "ask">` in `settings.json`. The new format stores only user-defined overrides — default rules are never written to disk, so updates to the built-in defaults are automatically picked up.
-- Default rules are now defined as a `Record<string, "allow" | "ask">` in `src/defaults.ts` and merged with user rules at load time. User rules are appended last so they win (last-match-wins evaluation in insertion order).
-- The special pattern `"*"` matches any command, allowing rules like `"*": "allow"` to trust all commands globally.
-- `/unbash deny` has been removed. Use `rules` directly in `settings.json` to remove a default rule.
-- `/unbash list` now shows default rules and user rules as separate groups.
-- `isCommandAllowed` replaced by `resolveCommandAction`, which returns `"allow" | "ask"` instead of a boolean.
 
 ## [1.3.0] - 2026-03-15
 

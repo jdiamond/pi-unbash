@@ -1,5 +1,9 @@
 # pi-unbash 🛡️
 
+> **Deprecated.** This package has been superseded by **[pi-guard](https://github.com/jdiamond/pi-guard)**.
+> pi-guard has a superset of the same features plus broader threat detection (forbidden paths, environment variable inspection, etc.).
+> No further updates will be published for pi-unbash. Please migrate to pi-guard.
+
 A high-security, AST-powered bash confirmation extension for the [`pi`](https://github.com/badlogic/pi-mono) coding agent.
 
 ## Why `pi-unbash`?
